@@ -91,11 +91,13 @@ Built entirely on free developer tiers—no credit card required.
 ## 📂 Project Structure
 
 ```
-boardroom-agency/
+automaton-boardroom/
 │
-├── README.MD                   # This file
+├── README.md                   # This file
 ├── .env                        # API keys (Gemini, E2B, LangSmith) — NOT committed
-├── requirements.txt            # Python dependencies
+├── .env.example                # Example environment variables template
+├── pyproject.toml              # Project config & dependencies (uv)
+├── uv.lock                     # Locked dependency versions (auto-generated)
 ├── app.py                      # Streamlit UI entry point
 │
 └── agency/                     # Core LangGraph package
@@ -107,45 +109,105 @@ boardroom-agency/
 
 ---
 
+## 📦 Dependencies
+
+All dependencies are managed with `uv` and specified in `pyproject.toml`:
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `langgraph` | ^0.1.0 | State machine orchestration & workflow |
+| `langchain` | ^0.2.0 | LLM framework core utilities |
+| `langchain-google-genai` | ^0.1.0 | Google Gemini LLM integration |
+| `langsmith` | ^0.1.0 | Tracing, debugging, & monitoring |
+| `e2b` | ^1.0.0 | Secure sandbox code execution |
+| `streamlit` | ^1.28.0 | Web UI framework |
+| `pydantic` | ^2.0.0 | Data validation & settings |
+| `python-dotenv` | ^1.0.0 | Environment variable management |
+| `tenacity` | ^8.2.0 | Retry logic for API calls |
+| `aiohttp` | ^3.9.0 | Async HTTP client |
+| `typing-extensions` | ^4.8.0 | Extended type hints |
+
+---
+
+## 🚀 About `uv` Package Manager
+
+This project uses **[uv](https://docs.astral.sh/uv/)** for dependency management. `uv` is a blazingly fast Python package installer & resolver written in Rust.
+
+### Why uv?
+- ⚡ **10-100x faster** than pip
+- 🔒 **Deterministic builds** with `uv.lock` file
+- 📦 **Complete Python environment management** (venv + packages)
+- 🎯 **Simpler commands** (one tool, not pip + venv)
+- 🔄 **Lock file by default** for reproducible environments
+
+### Installation
+
+```bash
+# macOS/Linux using pip
+pip install uv
+
+# macOS using Homebrew
+brew install uv
+
+# Windows (via pip)
+pip install uv
+
+# Or download from: https://docs.astral.sh/uv/
+```
+
+---
+
 ## ⚙️ Quick Start
 
 ### Prerequisites
-- Python 3.10+
-- Free API keys (created in next step)
+- **Python 3.10+** (required for TypedDict)
+- **uv** package manager ([install here](https://docs.astral.sh/uv/))
+- Free API keys (created in Step 2)
 
 ### 1️⃣ Clone & Set Up Environment
 
 ```bash
-git clone https://github.com/yourusername/automaton-boardroom.git
-cd boardroom-agency
+# Clone repository
+git clone https://github.com/prashant33/automaton-boardroom.git
+cd automaton-boardroom
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Create & activate virtual environment with uv
+uv venv
 
-# Install dependencies
-pip install -r requirements.txt
+# Activate venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install dependencies via uv
+uv sync
 ```
+
+**Or in one command:**
+```bash
+uv sync --python 3.11
+```
+
+---
 
 ### 2️⃣ Get Free API Keys (2 minutes)
 
-**Google Gemini:**
+**Google Gemini API:**
 1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
 2. Click "Get API Key" → "Create API Key in new project"
 3. Copy your API key
 
-**E2B:**
+**E2B (Sandbox):**
 1. Go to [E2B Dashboard](https://e2b.dev)
-2. Sign up (free) → API Keys
-3. Copy your API key
+2. Sign up (free) → Navigate to API Keys
+3. Generate and copy your API key
 
-**LangSmith (Optional):**
+**LangSmith (Optional - for tracing):**
 1. Go to [LangSmith](https://smith.langchain.com)
-2. Sign up → Organization → Create API Key
+2. Sign up → Organization settings → API Keys
+3. Create and copy your API key
 
 ### 3️⃣ Configure Environment Variables
 
-Create a `.env` file in the root directory:
+Create a `.env` file in the root directory (copy from `.env.example`):
 
 ```env
 # LLM Provider Configuration
@@ -160,17 +222,80 @@ LANGCHAIN_API_KEY="your_langsmith_api_key_here"
 LANGCHAIN_PROJECT="automaton-boardroom"
 ```
 
+⚠️ **Never commit `.env` to version control!** It contains sensitive API keys.
+
 ### 4️⃣ Run the Application
 
 ```bash
-streamlit run app.py
+# Make sure venv is activated
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Launch Streamlit app
+uv run streamlit run app.py
 ```
 
 Open your browser to `http://localhost:8501`
 
 ---
 
-## 💡 Usage Examples
+## � Development Setup
+
+### Install Development Dependencies
+
+```bash
+# Install all dependencies including dev tools
+uv sync --all-extras
+
+# Or add specific dev dependencies
+uv add --dev pytest pytest-asyncio pytest-cov ruff black isort mypy
+```
+
+### Common Development Tasks
+
+```bash
+# Run tests
+uv run pytest
+
+# Run tests with coverage
+uv run pytest --cov=agency
+
+# Format code with black
+uv run black .
+
+# Sort imports with isort
+uv run isort .
+
+# Lint with ruff
+uv run ruff check .
+
+# Type check with mypy
+uv run mypy agency/
+
+# Run all code quality checks
+uv run black . && uv run isort . && uv run ruff check . && uv run mypy agency/
+```
+
+### Project Structure for Development
+
+```
+automaton-boardroom/
+├── agency/                     # Main package
+│   ├── __init__.py
+│   ├── state.py               # State machine definition
+│   ├── nodes.py               # Agent implementations
+│   └── graph.py               # LangGraph workflow
+├── tests/                      # Test suite
+│   ├── __init__.py
+│   ├── test_state.py
+│   ├── test_nodes.py
+│   └── test_graph.py
+├── app.py                      # Streamlit entry point
+├── pyproject.toml              # Project config with uv
+├── uv.lock                     # Dependency lock file
+└── .env.example                # Environment template
+```
+
+---
 
 ### Example 1: Build a Todo CLI App
 ```
@@ -220,14 +345,45 @@ SANDBOX_RAM_MB = 512  # E2B sandbox memory allocation
 
 ## 🚨 Troubleshooting
 
+### Common Issues
+
 | Issue | Solution |
 |-------|----------|
+| `uv: command not found` | Install uv: `pip install uv` or follow [uv installation](https://docs.astral.sh/uv/#installation) |
 | `GOOGLE_API_KEY not found` | Verify `.env` file exists in root directory with correct key format |
 | `E2B_API_KEY invalid` | Check key hasn't expired; regenerate at [e2b.dev](https://e2b.dev) |
-| `Streamlit port 8501 already in use` | `streamlit run app.py --server.port 8502` |
-| `Tests keep failing after 5 retries` | Check agent loop max retries; may need human intervention |
-| `LangSmith not connecting` | Set `LANGCHAIN_TRACING_V2=false` to proceed without tracing |
+| `Streamlit port 8501 already in use` | `uv run streamlit run app.py -- --server.port 8502` |
+| `ModuleNotFoundError: No module named 'langgraph'` | Run `uv sync` to install all dependencies |
+| `LangSmith not connecting` | Set `LANGCHAIN_TRACING_V2=false` or check API key validity |
 | `E2B sandbox quota exceeded` | Check usage at E2B dashboard; free tier = 100 hrs/month |
+
+### Useful uv Commands
+
+```bash
+# Sync dependencies (install/update)
+uv sync
+
+# Add a new dependency
+uv add package-name
+
+# Add dev dependency
+uv add --dev pytest
+
+# Update all dependencies
+uv sync --upgrade
+
+# Run a script
+uv run python script.py
+
+# Run with specific Python version
+uv sync --python 3.11
+
+# List installed packages
+uv pip list
+
+# Create fresh environment
+uv venv --clean
+```
 
 ---
 

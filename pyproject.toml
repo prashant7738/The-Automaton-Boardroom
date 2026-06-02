@@ -1,0 +1,154 @@
+[project]
+name = "automaton-boardroom"
+version = "0.1.0"
+description = "Autonomous Multi-Agent Software Micro-Agency using LangGraph, LangSmith & E2B"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Your Name", email = "your.email@example.com" }]
+keywords = [
+    "ai",
+    "agents",
+    "langgraph",
+    "langchain",
+    "e2b",
+    "multi-agent",
+    "automation",
+    "software-development",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    # Core LangChain & LangGraph Orchestration
+    "langgraph>=0.1.0",           # State machine workflow orchestration
+    "langchain>=0.2.0",            # LLM framework core
+    "langchain-google-genai>=0.1.0", # Google Gemini integration
+    # Observability & Tracing
+    "langsmith>=0.1.0",            # Tracing, debugging, monitoring
+    # Code Execution & Sandboxing
+    "e2b>=1.0.0",                  # Secure sandbox environment
+    # Frontend & UI
+    "streamlit>=1.28.0",           # Web UI framework
+    # Data Validation & Settings
+    "pydantic>=2.0.0",             # Data validation library
+    # Environment Management
+    "python-dotenv>=1.0.0",        # Load .env files
+    # API & HTTP
+    "aiohttp>=3.9.0",              # Async HTTP client
+    "httpx>=0.25.0",               # Modern HTTP client
+    # Reliability & Resilience
+    "tenacity>=8.2.0",             # Retry logic with exponential backoff
+    # Type Hints & Extensions
+    "typing-extensions>=4.8.0",    # Extended type hints for older Python
+    "google-genai>=1.75.0",
+    "langchain-groq>=1.1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Testing
+    "pytest>=7.4.0",               # Testing framework
+    "pytest-asyncio>=0.21.0",      # Async test support
+    "pytest-cov>=4.1.0",           # Coverage reporting
+    
+    # Code Quality
+    "ruff>=0.1.0",                 # Fast Python linter
+    "black>=23.11.0",              # Code formatter
+    "isort>=5.12.0",               # Import sorting
+    "mypy>=1.7.0",                 # Static type checker
+    
+    # Development Tools
+    "ipython>=8.16.0",             # Interactive shell
+    "ipdb>=0.13.0",                # IPython debugger
+]
+
+[project.urls]
+Homepage = "https://github.com/prashant33/automaton-boardroom"
+Documentation = "https://github.com/prashant33/automaton-boardroom#readme"
+Repository = "https://github.com/prashant33/automaton-boardroom.git"
+Issues = "https://github.com/prashant33/automaton-boardroom/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agency"]
+
+# Black formatter configuration
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | venv
+)/
+'''
+
+# isort import sorting
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+known_first_party = ["agency"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+
+# Ruff linter configuration
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "C",    # flake8-comprehensions
+    "B",    # flake8-bugbear
+    "UP",   # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+    "B008",  # function call in default argument
+]
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+    ".eggs",
+]
+
+# mypy type checker
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--verbose --cov=agency --cov-report=term-missing"
