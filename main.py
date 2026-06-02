@@ -73,7 +73,12 @@ def main():
     print("\nWorkflow completed!")
     final = app.get_state(config).values
     print(f"\nApproved by Human: {final.get('approved_by_human', False)}")
-    print(f"\nGenerated Code:\n{final['source_code'].get('main.py', 'N/A')}")
+    files = final.get("source_code", {})
+    if files:
+        rendered = "\n\n".join([f"# {path}\n{content}" for path, content in files.items()])
+        print(f"\nGenerated Code:\n{rendered}")
+    else:
+        print("\nGenerated Code:\nN/A")
     print(f"\nTest Logs:\n{final.get('test_logs', 'N/A')}")
 
 
