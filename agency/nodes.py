@@ -244,6 +244,7 @@ def _run_react(sandbox, source_files: dict) -> str:
     logs.append(f"[build]\n{build_out}")
 
     if build_failed:
+        logs.append("[test result] failed")
         return "\n".join(logs)
 
     # Detect output dir: Vite → dist, CRA/Next → build
@@ -387,6 +388,7 @@ def developer_node(state: AgencyState) -> Dict:
     - Return a JSON object where keys are relative file paths and values are file contents.
     - Example for FastAPI: {{"main.py": "...", "requirements.txt": "fastapi\nuvicorn"}}
     - Example for React: {{"package.json": "...", "src/App.jsx": "...", "public/index.html": "..."}}
+    - For React apps, prefer Vite. If you use CRA scripts (`react-scripts`), you MUST include `react-scripts` in dependencies.
     - Example for plain Python: {{"main.py": "..."}}
     - Include requirements.txt (Python) or package.json (Node) when third-party packages are needed.
     - Do NOT use local relative imports between generated files unless they are in the same dict.

@@ -25,8 +25,8 @@ def router(state: AgencyState) -> Literal["developer", "human_review"]:
     has_error = any(
         kw in logs
         for kw in ("Error", "error", "FAILED", "failed", "exception", "Exception",
-                   "[tester exception]", "exit_code", "npm ERR", "SyntaxError",
-                   "ModuleNotFoundError", "ImportError")
+                   "[tester exception]", "[test result] failed", "exit_code", "npm ERR", "ERR!",
+                   "not found", "command not found", "SyntaxError", "ModuleNotFoundError", "ImportError")
     )
     if has_error and state.get("iterations", 0) < 5:
         return "developer"
