@@ -237,8 +237,10 @@ def _run_react(sandbox, source_files: dict) -> str:
     if build.exit_code != 0:
         return "\n".join(logs)
 
-    # Detect output dir (Vite → dist, CRA → build)
-    serve_dir = "dist" if any("dist" in f for f in source_files) else "build"
+    # Detect output dir: Vite → dist, CRA/Next → build
+    pkg_json = source_files.get("package.json", "")
+    is_vite = "vite.config" in " ".join(source_files.keys()) or '"vite"' in pkg_json
+    serve_dir = "dist" if is_vite else "build"
     start_cmd = (
         f"nohup npx serve -s {serve_dir} -l 3000 "
         f"> /tmp/serve.log 2>&1 & echo $!"

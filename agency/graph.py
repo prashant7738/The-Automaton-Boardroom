@@ -20,9 +20,16 @@ workflow.add_edge("developer", "tester")
 
 # now for conditional edges 
 
-def router(state :AgencyState) -> Literal["developer","human_review"]:
-    if "Error" in state["test_logs"] and state["iterations"] < 5:
-        return "developer"  # Loop back to fix the code!
+def router(state: AgencyState) -> Literal["developer", "human_review"]:
+    logs = state.get("test_logs", "")
+    has_error = any(
+        kw in logs
+        for kw in ("Error", "error", "FAILED", "failed", "exception", "Exception",
+                   "[tester exception]", "exit_code", "npm ERR", "SyntaxError",
+                   "ModuleNotFoundError", "ImportError")
+    )
+    if has_error and state.get("iterations", 0) < 5:
+        return "developer"
     return "human_review"
 
 
