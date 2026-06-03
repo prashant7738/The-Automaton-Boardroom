@@ -33,8 +33,21 @@ def router(state: AgencyState) -> Literal["developer", "human_review"]:
     return "human_review"
 
 
-workflow.add_conditional_edges("tester",router)
-workflow.add_edge("human_review", END)
+workflow.add_conditional_edges("tester", router)
+
+
+def human_router(state: AgencyState) -> Literal["developer", "__end__"]:
+    """Loop back to developer if human rejected and iterations remain."""
+    if not state.get("approved_by_human", False) and state.get("iterations", 0) < 5:
+        return "developer"
+    return "__end__"
+
+
+workflow.add_conditional_edges(
+    "human_review",
+    human_router,
+    {"developer": "developer", "__end__": END},
+)
 
 
 # compile with in-memory checkpointer (swap for SqliteSaver/RedisSaver in prod)

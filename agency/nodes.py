@@ -329,43 +329,52 @@ def _run_docker(sandbox, source_files: dict) -> str:
 
 
 def _normalize_source_files(source_files: dict) -> dict:
-    """Normalize model output to a file-map.
+    """Normalize model output to a {filepath: str} map.
 
-    Handles the common bad shape where the model returns:
-    {"main.py": "{\"package.json\": \"...\", ...}"}
+    Handles:
+    - Values that are dicts instead of strings (model forgot to stringify)
+    - Single main.py wrapping an inner JSON file map (as string or dict)
     """
     if not isinstance(source_files, dict):
         return {"main.py": str(source_files)}
 
-    # Direct valid shape: file path -> file content string
-    if source_files and all(isinstance(v, str) for v in source_files.values()):
-        if len(source_files) > 1:
-            return source_files
+    def _coerce_file_value(key: str, value) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            if len(value) == 1:
+                sole_key = next(iter(value))
+                if isinstance(sole_key, str) and (len(sole_key) > 40 or "\n" in sole_key):
+                    return sole_key
+            return json.dumps(value, indent=2)
+        return str(value)
 
-    # Try unwrapping nested JSON from a single main.py payload.
-    if len(source_files) == 1 and "main.py" in source_files:
-        raw = source_files.get("main.py", "")
-        if isinstance(raw, str):
-            inner = raw.strip()
-            if inner.startswith("```"):
-                lines = inner.split("\n")
-                lines = lines[1:]
-                if lines and lines[-1].strip() == "```":
-                    lines = lines[:-1]
-                inner = "\n".join(lines)
+    coerced = {k: _coerce_file_value(k, v) for k, v in source_files.items()}
 
-            match = re.search(r'\{.*\}', inner, re.DOTALL)
-            if match:
-                try:
-                    parsed = json.loads(match.group())
-                    if isinstance(parsed, dict) and parsed and all(
-                        isinstance(v, str) for v in parsed.values()
-                    ):
-                        return parsed
-                except json.JSONDecodeError:
-                    pass
+    # Multiple files → likely valid
+    if len(coerced) > 1:
+        return coerced
 
-    return source_files
+    # Single-file case: maybe a wrapper with inner JSON map
+    if "main.py" in coerced:
+        raw = coerced["main.py"].strip()
+        if raw.startswith("```"):
+            lines = raw.split("\n")[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            raw = "\n".join(lines)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group())
+                if isinstance(parsed, dict) and parsed:
+                    unwrapped = {k: _coerce_file_value(k, v) for k, v in parsed.items()}
+                    if all(isinstance(v, str) for v in unwrapped.values()):
+                        return unwrapped
+            except json.JSONDecodeError:
+                pass
+
+    return coerced
 
 
 # ---------------------------------------------------------------------------
