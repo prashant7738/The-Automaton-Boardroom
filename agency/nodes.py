@@ -5,6 +5,7 @@ import json
 import re
 import time
 from dotenv import load_dotenv
+import traceback
 
 from .states import AgencyState
 
@@ -338,14 +339,24 @@ def tester_node(state: AgencyState) -> Dict:
         for filepath, content in source_files.items():
             sandbox.files.write(filepath, content)
 
-        if is_react:
-            logs = _run_react(sandbox, source_files)
-        elif is_django:
-            logs = _run_django(sandbox, source_files)
-        elif is_fastapi:
-            logs = _run_fastapi(sandbox, source_files)
-        else:
-            logs = _run_python_script(sandbox, source_files)
+        try:
+            if is_react:
+                logs = _run_react(sandbox, source_files)
+            elif is_django:
+                logs = _run_django(sandbox, source_files)
+            elif is_fastapi:
+                logs = _run_fastapi(sandbox, source_files)
+            else:
+                logs = _run_python_script(sandbox, source_files)
+        except Exception as e:
+            tb = traceback.format_exc()
+            # Include any stdout/stderr stored on the exception, if present
+            extra = ""
+            try:
+                extra = getattr(e, 'stderr', '') or getattr(e, 'stdout', '') or ''
+            except Exception:
+                extra = ''
+            logs = f"[tester exception]\n{str(e)}\n\n{extra}\n\n{tb}"
 
     return {"test_logs": logs}
 
