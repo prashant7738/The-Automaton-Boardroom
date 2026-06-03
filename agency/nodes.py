@@ -327,6 +327,46 @@ def _run_docker(sandbox, source_files: dict) -> str:
     return "\n".join(logs)
 
 
+def _normalize_source_files(source_files: dict) -> dict:
+    """Normalize model output to a file-map.
+
+    Handles the common bad shape where the model returns:
+    {"main.py": "{\"package.json\": \"...\", ...}"}
+    """
+    if not isinstance(source_files, dict):
+        return {"main.py": str(source_files)}
+
+    # Direct valid shape: file path -> file content string
+    if source_files and all(isinstance(v, str) for v in source_files.values()):
+        if len(source_files) > 1:
+            return source_files
+
+    # Try unwrapping nested JSON from a single main.py payload.
+    if len(source_files) == 1 and "main.py" in source_files:
+        raw = source_files.get("main.py", "")
+        if isinstance(raw, str):
+            inner = raw.strip()
+            if inner.startswith("```"):
+                lines = inner.split("\n")
+                lines = lines[1:]
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                inner = "\n".join(lines)
+
+            match = re.search(r'\{.*\}', inner, re.DOTALL)
+            if match:
+                try:
+                    parsed = json.loads(match.group())
+                    if isinstance(parsed, dict) and parsed and all(
+                        isinstance(v, str) for v in parsed.values()
+                    ):
+                        return parsed
+                except json.JSONDecodeError:
+                    pass
+
+    return source_files
+
+
 # ---------------------------------------------------------------------------
 
 @traceable
@@ -382,6 +422,8 @@ def developer_node(state: AgencyState) -> Dict:
     if source_code is None:
         source_code = {"main.py": raw}
 
+    source_code = _normalize_source_files(source_code)
+
     return {
         "source_code": source_code,
         "iterations": current_iterations,
@@ -390,7 +432,7 @@ def developer_node(state: AgencyState) -> Dict:
 
 @traceable
 def tester_node(state: AgencyState) -> Dict:
-    source_files = state['source_code']
+    source_files = _normalize_source_files(state['source_code'])
 
     # Detect project type from file tree and source content
     all_source = " ".join(source_files.values()).lower()
