@@ -466,3 +466,7 @@ Distributed under the MIT License. See LICENSE for more information.
 **Built with ❤️ using LangGraph, LangSmith & E2B**
 
 *Last Updated: May 2026*
+
+
+to run graph :
+ python -c "from agency.graph import get_mermaid_png_bytes; from io import BytesIO; from PIL import Image; Image.open(BytesIO(get_mermaid_png_bytes())).show()"

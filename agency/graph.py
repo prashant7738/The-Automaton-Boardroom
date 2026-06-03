@@ -40,3 +40,70 @@ workflow.add_edge("human_review", END)
 # compile with in-memory checkpointer (swap for SqliteSaver/RedisSaver in prod)
 checkpointer = MemorySaver()
 app = workflow.compile(checkpointer=checkpointer)
+
+
+def print_graph():
+    """Print the Mermaid diagram source and optionally save a PNG."""
+    mermaid_str = app.get_graph().draw_mermaid()
+    print("\n=== Agent Graph (Mermaid) ===")
+    print(mermaid_str)
+
+    try:
+        png_bytes = app.get_graph().draw_mermaid_png()
+        out_path = "agency_graph.png"
+        with open(out_path, "wb") as f:
+            f.write(png_bytes)
+        print(f"\n[graph saved → {out_path}]")
+    except Exception as e:
+        print(f"[PNG export skipped: {e}]")
+
+
+def get_mermaid_png_bytes() -> bytes:
+    """Return the graph PNG bytes generated from the internal Mermaid source.
+
+    Use this in notebooks to avoid writing a file, e.g.:
+      from IPython.display import Image, display
+      display(Image(get_mermaid_png_bytes()))
+    """
+    return app.get_graph().draw_mermaid_png()
+
+
+def display_graph_ipython():
+    """Display the graph inline in an IPython/Jupyter environment without saving.
+
+    Falls back to printing a message if IPython display tools aren't available.
+    """
+    try:
+        from IPython.display import Image, display
+    except Exception as e:
+        print(f"[display_graph_ipython skipped: can't import IPython.display: {e}]")
+        return
+
+    try:
+        png = get_mermaid_png_bytes()
+        display(Image(png))
+    except Exception as e:
+        print(f"[display_graph_ipython failed: {e}]")
+
+
+if __name__ == "__main__":
+    # When invoked as a script, save the PNG and try to open it with
+    # the system viewer (`xdg-open` on Linux). This is optional and
+    # will silently skip if not available.
+    print_graph()
+    try:
+        import os, shutil, subprocess
+
+        out_path = "agency_graph.png"
+        if os.path.exists(out_path):
+            if shutil.which("xdg-open"):
+                try:
+                    subprocess.run(["xdg-open", out_path], check=False)
+                except Exception as e:
+                    print(f"[open skipped: {e}]")
+            else:
+                print(f"[open skipped: no xdg-open found; see {out_path}]")
+        else:
+            print(f"[no image to open: {out_path} not found]")
+    except Exception as e:
+        print(f"[post-print open skipped: {e}]")
