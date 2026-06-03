@@ -37,7 +37,7 @@ def model(prompt,temperature = 0.3):
         return llm.invoke(prompt)
     
     except Exception as e:
-        print(f"gemini doesnt get called due to {e}. Now Groq ....")
+        print(f"groq doesnt get called due to {e}. Now gemini ....")
         llm = ChatGoogleGenerativeAI(
             model="gemini-2.0-flash",
             temperature = temperature,
@@ -278,56 +278,6 @@ def _run_react(sandbox, source_files: dict) -> str:
 
 # ---------------------------------------------------------------------------
 
-def _run_docker(sandbox, source_files: dict) -> str:
-    """Build and run the project via its Dockerfile. Falls back gracefully."""
-    logs = []
-    # Quick check: is Docker available in this sandbox?
-    try:
-        chk = sandbox.commands.run("docker info > /dev/null 2>&1 && echo ok || echo no", timeout=10)
-        if chk.stdout.strip() != "ok":
-            logs.append("[docker] Docker not available in sandbox — skipping Docker path.")
-            return "\n".join(logs)
-    except Exception as e:
-        logs.append(f"[docker] Docker check failed: {e}")
-        return "\n".join(logs)
-
-    try:
-        build = sandbox.commands.run("docker build -t generated-app . 2>&1", timeout=300)
-        logs.append(f"[docker build]\n{(build.stdout or build.stderr or '')[-1000:]}")
-        if build.exit_code != 0:
-            return "\n".join(logs)
-    except CommandExitException as e:
-        logs.append(f"[docker build] ERROR\n{getattr(e, 'stderr', '') or str(e)}")
-        return "\n".join(logs)
-
-    try:
-        run_cmd = (
-            "nohup docker run --rm -p 8080:8080 --name generated-app generated-app "
-            "> /tmp/docker.log 2>&1 & echo $!"
-        )
-        proc = sandbox.commands.run(run_cmd, timeout=15)
-        pid = proc.stdout.strip()
-
-        ready = _wait_for_port(sandbox, 8080, retries=15, delay=2)
-        logs.append(f"[docker run ready: {ready}]")
-
-        if ready:
-            r = sandbox.commands.run(
-                "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/", timeout=10
-            )
-            logs.append(f"GET / -> {r.stdout.strip()}")
-
-        docker_log = sandbox.commands.run("cat /tmp/docker.log 2>&1", timeout=5)
-        logs.append(f"[docker log]\n{(docker_log.stdout or '')[-1500:]}")
-
-        if pid:
-            sandbox.commands.run(f"docker stop generated-app 2>/dev/null || kill {pid} 2>/dev/null || true", timeout=10)
-    except Exception as e:
-        logs.append(f"[docker run] ERROR: {e}")
-
-    return "\n".join(logs)
-
-
 def _normalize_source_files(source_files: dict) -> dict:
     """Normalize model output to a {filepath: str} map.
 
@@ -401,9 +351,6 @@ def developer_node(state: AgencyState) -> Dict:
     - Example for plain Python: {{"main.py": "..."}}
     - Include requirements.txt (Python) or package.json (Node) when third-party packages are needed.
     - Do NOT use local relative imports between generated files unless they are in the same dict.
-    - ALWAYS include a "Dockerfile" that builds and runs the app on port 8080. This is mandatory.
-      The Dockerfile must: copy all source files, install dependencies, and start the server.
-      Use multi-stage builds where appropriate (e.g. build React then serve with nginx).
     - Return ONLY the raw JSON object. No markdown fences, no extra text.
     """
 
@@ -459,23 +406,7 @@ def tester_node(state: AgencyState) -> Dict:
             sandbox.files.write(filepath, content)
 
         try:
-            # Prefer Docker when the developer provides a Dockerfile
-            if "Dockerfile" in source_files:
-                docker_logs = _run_docker(sandbox, source_files)
-                if "not available" not in docker_logs and "ERROR" not in docker_logs:
-                    logs = docker_logs
-                else:
-                    # Docker unavailable or failed — fall back to native runner
-                    logs = docker_logs + "\n[falling back to native runner]\n"
-                    if is_react:
-                        logs += _run_react(sandbox, source_files)
-                    elif is_django:
-                        logs += _run_django(sandbox, source_files)
-                    elif is_fastapi:
-                        logs += _run_fastapi(sandbox, source_files)
-                    else:
-                        logs += _run_python_script(sandbox, source_files)
-            elif is_react:
+            if is_react:
                 logs = _run_react(sandbox, source_files)
             elif is_django:
                 logs = _run_django(sandbox, source_files)
