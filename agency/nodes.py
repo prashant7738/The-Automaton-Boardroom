@@ -216,8 +216,19 @@ def _run_django(sandbox, source_files: dict) -> str:
 def _run_react(sandbox, source_files: dict) -> str:
     logs = []
 
-    install = sandbox.commands.run("npm ci 2>&1 || npm install 2>&1", timeout=180)
-    logs.append(f"[npm install]\n{(install.stdout or install.stderr or '')[-600:]}")
+    # Prefer clean install when a lockfile is provided. If no lockfile,
+    # limit Node's heap for npm to avoid OOM in constrained sandboxes and
+    # use conservative flags to speed up install.
+    if "package-lock.json" in source_files or "npm-shrinkwrap.json" in source_files:
+        install_cmd = "npm ci --silent 2>&1"
+    else:
+        install_cmd = (
+            "NODE_OPTIONS=--max-old-space-size=1536 npm install --no-audit --no-fund "
+            "--legacy-peer-deps --silent 2>&1"
+        )
+
+    install = sandbox.commands.run(install_cmd, timeout=300)
+    logs.append(f"[npm install]\n{(install.stdout or install.stderr or '')[-1200:]}")
 
     build = sandbox.commands.run("npm run build 2>&1", timeout=180)
     logs.append(f"[build]\n{(build.stdout or build.stderr or '')[-600:]}")
