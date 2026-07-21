@@ -37,10 +37,10 @@ workflow.add_conditional_edges("tester", router)
 
 
 def human_router(state: AgencyState) -> Literal["developer", "__end__"]:
-    """Loop back to developer if human rejected and iterations remain."""
-    if not state.get("approved_by_human", False) and state.get("iterations", 0) < 5:
-        return "developer"
-    return "__end__"
+    """Always honour an explicit human rejection; end only on approval."""
+    if state.get("approved_by_human", False):
+        return "__end__"
+    return "developer"
 
 
 workflow.add_conditional_edges(

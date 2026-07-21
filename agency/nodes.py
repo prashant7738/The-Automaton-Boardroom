@@ -318,13 +318,74 @@ def _normalize_source_files(source_files: dict) -> dict:
             try:
                 parsed = json.loads(match.group())
                 if isinstance(parsed, dict) and parsed:
+                    # Coerce all values to strings; do NOT gate on type here
                     unwrapped = {k: _coerce_file_value(k, v) for k, v in parsed.items()}
-                    if all(isinstance(v, str) for v in unwrapped.values()):
-                        return unwrapped
+                    return unwrapped
             except json.JSONDecodeError:
                 pass
 
     return coerced
+
+
+def _fix_react_structure(source_files: dict) -> dict:
+    """Fix common LLM mistakes in React/Vite project file placement.
+
+    The model frequently puts vite.config.* inside src/ and index.html
+    inside public/. Vite requires both to be at the project root.
+    """
+    files = dict(source_files)
+
+    # vite.config.* must be at root, not inside src/
+    for wrong in ("src/vite.config.js", "src/vite.config.ts", "src/vite.config.jsx"):
+        if wrong in files:
+            correct = wrong.split("/", 1)[1]  # strip leading "src/"
+            if correct not in files:
+                files[correct] = files.pop(wrong)
+            else:
+                del files[wrong]  # root copy already present; drop the misplaced one
+
+    # For Vite projects, index.html must be at root, not in public/
+    has_vite = "vite.config.js" in files or "vite.config.ts" in files
+    if has_vite and "public/index.html" in files and "index.html" not in files:
+        files["index.html"] = files.pop("public/index.html")
+
+    # Fix index.html entry-point script src to point at the real .jsx entry file.
+    # The model sometimes writes src="/src/index.js" or src="/main.js" instead of
+    # the correct src="/src/main.jsx".
+    if "index.html" in files:
+        html = files["index.html"]
+        # If there's a main.jsx or index.jsx in src/, make sure index.html points there.
+        jsx_entry = None
+        for candidate in ("src/main.jsx", "src/index.jsx", "src/main.tsx", "src/index.tsx"):
+            if candidate in files:
+                jsx_entry = "/" + candidate
+                break
+        if jsx_entry:
+            import re as _re
+            html = _re.sub(
+                r'(<script[^>]+type=["\']module["\'][^>]+src=["\'])([^"\']+)(["\'])',
+                lambda m: m.group(1) + jsx_entry + m.group(3),
+                html,
+            )
+            files["index.html"] = html
+
+    # Rename .js files to .jsx when their content contains JSX syntax.
+    # Vite requires the .jsx extension to enable the JSX transform.
+    _JSX_MARKERS = ("<>", "</", "React.createElement", "ReactDOM", "import React")
+    renamed: dict = {}
+    to_delete: list = []
+    for fname, content in files.items():
+        if fname.endswith(".js") and fname.startswith("src/"):
+            if any(marker in content for marker in _JSX_MARKERS):
+                new_name = fname[:-3] + ".jsx"
+                if new_name not in files:
+                    renamed[new_name] = content
+                    to_delete.append(fname)
+    for fname in to_delete:
+        del files[fname]
+    files.update(renamed)
+
+    return files
 
 
 # ---------------------------------------------------------------------------
@@ -346,12 +407,89 @@ def developer_node(state: AgencyState) -> Dict:
     STRICT RULES:
     - Return a JSON object where keys are relative file paths and values are file contents.
     - Example for FastAPI: {{"main.py": "...", "requirements.txt": "fastapi\nuvicorn"}}
-    - Example for React: {{"package.json": "...", "src/App.jsx": "...", "public/index.html": "..."}}
+    - Example for React: {{"package.json": "...", "index.html": "...", "vite.config.js": "...", "src/App.jsx": "...", "src/main.jsx": "..."}}
     - For React apps, prefer Vite. If you use CRA scripts (`react-scripts`), you MUST include `react-scripts` in dependencies.
     - Example for plain Python: {{"main.py": "..."}}
     - Include requirements.txt (Python) or package.json (Node) when third-party packages are needed.
     - Do NOT use local relative imports between generated files unless they are in the same dict.
+    - ALL JSON file values (e.g. package.json) MUST be serialised as a JSON string, NOT a nested JSON object.
+    - CRITICAL for React/Vite: "vite.config.js" or "vite.config.ts" MUST be at the PROJECT ROOT. NEVER place it inside "src/". Placing it at "src/vite.config.js" causes a build failure.
+    - CRITICAL for React/Vite: "index.html" MUST be at the PROJECT ROOT (not in "public/"). Vite uses the root-level index.html as the entry point.
+    - CRITICAL for React/Vite: "index.html" MUST reference the entry point as: <script type="module" src="/src/main.jsx"></script> (or .tsx). Point to the actual file under src/, not "src/index.js" or "main.js".
+    - CRITICAL for React/Vite: Any file containing JSX syntax MUST use the .jsx (or .tsx) extension. Files named .js that contain JSX will cause a Vite parse error.
     - Return ONLY the raw JSON object. No markdown fences, no extra text.
+
+    DOCKER RULES — you MUST always include these three files in every output:
+
+    1. "Dockerfile" — production-ready, matching the detected stack:
+
+       Plain Python script:
+       FROM python:3.11-slim
+       WORKDIR /app
+       COPY requirements.txt* ./
+       RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || true
+       COPY . .
+       CMD ["python", "main.py"]
+
+       FastAPI:
+       FROM python:3.11-slim
+       WORKDIR /app
+       COPY requirements.txt ./
+       RUN pip install --no-cache-dir -r requirements.txt
+       COPY . .
+       EXPOSE 8000
+       CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+       Streamlit:
+       FROM python:3.11-slim
+       WORKDIR /app
+       COPY requirements.txt ./
+       RUN pip install --no-cache-dir -r requirements.txt
+       COPY . .
+       EXPOSE 8501
+       CMD ["streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+
+       React / Vite (multi-stage):
+       FROM node:20-alpine AS builder
+       WORKDIR /app
+       COPY package*.json ./
+       RUN npm install
+       COPY . .
+       RUN npm run build
+       FROM node:20-alpine
+       RUN npm install -g serve
+       WORKDIR /app
+       COPY --from=builder /app/dist ./dist
+       EXPOSE 3000
+       CMD ["serve", "-s", "dist", "-l", "3000"]
+
+    2. ".dockerignore":
+       __pycache__
+       *.pyc
+       *.pyo
+       .env
+       .venv
+       venv
+       node_modules
+       .git
+       dist
+       build
+       *.egg-info
+
+    3. "docker-compose.yml" — mounts .env and exposes the correct port:
+       Use the port matching the stack (8000 for FastAPI, 8501 for Streamlit, 3000 for React, none for plain scripts).
+       Do NOT include a "version" field — it is obsolete in Compose v2 and causes a warning.
+       Example:
+       services:
+         app:
+           build: .
+           ports:
+             - "8000:8000"
+           env_file:
+             - .env
+           restart: unless-stopped
+
+    Choose the correct Dockerfile template above based on what the project actually is. Do NOT skip any of these three Docker files.
     """
 
     response = model(prompt)
@@ -371,7 +509,8 @@ def developer_node(state: AgencyState) -> Dict:
     if json_match:
         try:
             parsed = json.loads(json_match.group())
-            if isinstance(parsed, dict) and all(isinstance(v, str) for v in parsed.values()):
+            # Accept any dict — _normalize_source_files handles non-string values
+            if isinstance(parsed, dict) and parsed:
                 source_code = parsed
         except json.JSONDecodeError:
             pass
@@ -381,6 +520,7 @@ def developer_node(state: AgencyState) -> Dict:
         source_code = {"main.py": raw}
 
     source_code = _normalize_source_files(source_code)
+    source_code = _fix_react_structure(source_code)
 
     return {
         "source_code": source_code,
@@ -445,7 +585,12 @@ def human_node(state: AgencyState) -> Dict:
 
     # feedback is whatever the caller passes via Command(resume=...)
     approved = str(feedback).strip().lower() in ("yes", "approve", "approved", "y")
-    return {
+    result = {
         "approved_by_human": approved,
         "human_feedback": str(feedback),
     }
+    if not approved:
+        # Reset the iteration counter so the dev/test auto-correction loop
+        # gets a fresh budget of 5 attempts after each human rejection.
+        result["iterations"] = 0
+    return result
