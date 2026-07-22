@@ -311,7 +311,19 @@ def _run_react(sandbox, source_files: dict) -> str:
 
     # Detect output dir: Vite → dist, CRA/Next → build
     pkg_json = source_files.get("package.json", "")
-    is_vite = "vite.config" in " ".join(source_files.keys()) or '"vite"' in pkg_json
+    # Check for vite.config file OR "vite" in the devDependencies/dependencies section only,
+    # not in the package name or description (which would be a false positive).
+    _pkg_deps: str = ""
+    if pkg_json:
+        try:
+            _pkg_obj = json.loads(pkg_json)
+            _pkg_deps = json.dumps({
+                **_pkg_obj.get("dependencies", {}),
+                **_pkg_obj.get("devDependencies", {}),
+            })
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    is_vite = "vite.config" in " ".join(source_files.keys()) or '"vite"' in _pkg_deps
     serve_dir = "dist" if is_vite else "build"
     start_cmd = (
         f"nohup npx serve -s {serve_dir} -l 3000 "
@@ -485,7 +497,7 @@ def developer_node(state: AgencyState) -> Dict:
     - CRITICAL for React/Vite: Any file containing JSX syntax MUST use the .jsx (or .tsx) extension. Files named .js that contain JSX will cause a Vite parse error.
     - CRITICAL for React/Vite: "package.json" devDependencies MUST always include "vite" and "@vitejs/plugin-react". Missing these causes "sh: vite: not found" at build time. Example devDependencies: {{"vite": "^5.0.0", "@vitejs/plugin-react": "^4.0.0"}}.
     - CRITICAL for React/Vite: "vite.config.js" MUST always include @vitejs/plugin-react plugin. Example: import react from '@vitejs/plugin-react'; export default { plugins: [react()] }.
-    - Return ONLY the raw JSON object. No markdown fences, no extra text.
+    - Return ONLY the raw JSON object. If you must wrap it in a markdown code fence, use ```json ... ``` — the fence will be stripped automatically.
 
     DOCKER RULES — you MUST always include these three files in every output:
 

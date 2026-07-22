@@ -69,6 +69,9 @@ def _run_resume(command, config: dict) -> None:
 
 
 def _reset() -> None:
+    executor = st.session_state.get("executor")
+    if executor is not None:
+        executor.shutdown(wait=False)
     st.session_state.phase = "idle"
     st.session_state.thread_id = None
     st.session_state.future = None
@@ -270,7 +273,7 @@ elif st.session_state.phase == "running":
             if st.session_state.activity_log:
                 st.caption(f"Last: {st.session_state.activity_log[-1]}")
 
-        time.sleep(2)
+        time.sleep(0.5)
         st.rerun()
 
 
