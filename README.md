@@ -13,10 +13,20 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 - ✅ **Full Development Lifecycle**: Spec → Code → Test → Self-Correct → Human Review → Delivery
 - ✅ **Self-Healing AI**: Automatically detects and fixes bugs through iterative testing
 - ✅ **Isolated Execution**: Secure E2B sandbox prevents malicious code execution
+- ✅ **Prompt-Safety Guardrails**: User-provided ideas, logs, and inputs are wrapped and scanned to reduce prompt injection risk
+- ✅ **LLM Provider Resilience**: Groq is tried first, then Gemini fallback is used if needed, with clear failure reporting
 - ✅ **Human-in-the-Loop**: Pause and approve before final deployment
 - ✅ **Zero Dependencies Cost**: Uses only free-tier APIs (Google Gemini, E2B, LangSmith)
 - ✅ **Full Observability**: LangSmith tracing for debugging and performance monitoring
 - ✅ **Streamlit UI**: Beautiful, interactive web interface for non-technical users
+
+---
+
+## 🆕 Recent Updates
+
+- Added safer LLM prompt handling so user ideas, specifications, logs, and runtime inputs are treated as data instead of instructions.
+- Improved model fallback behavior so Groq failures now fall back cleanly to Gemini, and both-provider failures are reported clearly.
+- Updated React/Vite generation and sandbox install behavior so generated apps install `vite` and `@vitejs/plugin-react` reliably before build.
 
 ---
 
@@ -102,7 +112,7 @@ automaton-boardroom/
 │
 └── agency/                     # Core LangGraph package
     ├── __init__.py
-    ├── state.py               # TypedDict state machine definition
+    ├── states.py              # TypedDict state machine definition
     ├── nodes.py               # Agent implementations & E2B tools
     └── graph.py               # Node routing & conditional loops
 ```
@@ -356,6 +366,7 @@ SANDBOX_RAM_MB = 512  # E2B sandbox memory allocation
 | `ModuleNotFoundError: No module named 'langgraph'` | Run `uv sync` to install all dependencies |
 | `LangSmith not connecting` | Set `LANGCHAIN_TRACING_V2=false` or check API key validity |
 | `E2B sandbox quota exceeded` | Check usage at E2B dashboard; free tier = 100 hrs/month |
+| `sh: vite: not found` during React build | Re-run generation after the latest fixes; React/Vite installs now force dev dependencies and include `vite` + `@vitejs/plugin-react` |
 
 ### Useful uv Commands
 
@@ -468,5 +479,7 @@ Distributed under the MIT License. See LICENSE for more information.
 *Last Updated: May 2026*
 
 
-to run graph :
+To run graph:
  python -c "from agency.graph import get_mermaid_png_bytes; from io import BytesIO; from PIL import Image; Image.open(BytesIO(get_mermaid_png_bytes())).show()"
+
+*Last Updated: July 2026*
