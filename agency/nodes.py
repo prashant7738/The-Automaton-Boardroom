@@ -221,11 +221,11 @@ def _run_react(sandbox, source_files: dict) -> str:
     # limit Node's heap for npm to avoid OOM in constrained sandboxes and
     # use conservative flags to speed up install.
     if "package-lock.json" in source_files or "npm-shrinkwrap.json" in source_files:
-        install_cmd = "npm ci --silent 2>&1"
+        install_cmd = "NODE_ENV=development npm ci --include=dev --silent 2>&1"
     else:
         install_cmd = (
-            "NODE_OPTIONS=--max-old-space-size=1536 npm install --no-audit --no-fund "
-            "--legacy-peer-deps --silent 2>&1"
+            "NODE_ENV=development NODE_OPTIONS=--max-old-space-size=1536 npm install "
+            "--no-audit --no-fund --legacy-peer-deps --include=dev --silent 2>&1"
         )
 
     install = sandbox.commands.run(install_cmd, timeout=300)
@@ -417,6 +417,8 @@ def developer_node(state: AgencyState) -> Dict:
     - CRITICAL for React/Vite: "index.html" MUST be at the PROJECT ROOT (not in "public/"). Vite uses the root-level index.html as the entry point.
     - CRITICAL for React/Vite: "index.html" MUST reference the entry point as: <script type="module" src="/src/main.jsx"></script> (or .tsx). Point to the actual file under src/, not "src/index.js" or "main.js".
     - CRITICAL for React/Vite: Any file containing JSX syntax MUST use the .jsx (or .tsx) extension. Files named .js that contain JSX will cause a Vite parse error.
+    - CRITICAL for React/Vite: "package.json" devDependencies MUST always include "vite" and "@vitejs/plugin-react". Missing these causes "sh: vite: not found" at build time. Example devDependencies: {{"vite": "^5.0.0", "@vitejs/plugin-react": "^4.0.0"}}.
+    - CRITICAL for React/Vite: "vite.config.js" MUST always include @vitejs/plugin-react plugin. Example: import react from '@vitejs/plugin-react'; export default { plugins: [react()] }.
     - Return ONLY the raw JSON object. No markdown fences, no extra text.
 
     DOCKER RULES — you MUST always include these three files in every output:
