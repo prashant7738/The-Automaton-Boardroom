@@ -118,8 +118,27 @@ def input_collector_node(state: AgencyState) -> Dict:
     response = model(prompt, temperature=0.0)
     content = response.content.strip()
 
+    required_inputs = []
     match = re.search(r'\[.*\]', content, re.DOTALL)
-    required_inputs = json.loads(match.group()) if match else []
+    if match:
+        try:
+            parsed = json.loads(match.group())
+            # Validate each item has the required keys and safe types
+            allowed_types = {"int", "float", "str"}
+            for item in parsed:
+                if (
+                    isinstance(item, dict)
+                    and isinstance(item.get("name"), str)
+                    and item.get("type") in allowed_types
+                    and isinstance(item.get("description"), str)
+                    # name must be a safe Python identifier
+                    and re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', item["name"])
+                ):
+                    required_inputs.append(item)
+                else:
+                    print(f"[input_collector] Skipping malformed input entry: {item}")
+        except json.JSONDecodeError as e:
+            print(f"[input_collector] Failed to parse LLM JSON output: {e}. Proceeding with no inputs.")
 
     user_inputs = {}
     if required_inputs:
