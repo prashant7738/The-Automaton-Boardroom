@@ -90,9 +90,12 @@ def pm_node(state: AgencyState) -> Dict:
     Provide the required markdown file structures and implementation logic.
     """
 
-    response = model(prompt)
+    try:
+        response = model(prompt)
+    except RuntimeError as e:
+        return {"specification": f"[pm_node error] LLM unavailable: {e}"}
 
-    return{"specification":response.content}
+    return {"specification": response.content}
 
 
 @traceable
@@ -115,7 +118,11 @@ def input_collector_node(state: AgencyState) -> Dict:
     Return ONLY the JSON array, no markdown, no extra text.
     """
 
-    response = model(prompt, temperature=0.0)
+    try:
+        response = model(prompt, temperature=0.0)
+    except RuntimeError as e:
+        print(f"[input_collector_node] LLM unavailable: {e}. Proceeding with no inputs.")
+        return {"required_inputs": [], "user_inputs": {}}
     content = response.content.strip()
 
     required_inputs = []
@@ -559,7 +566,11 @@ def developer_node(state: AgencyState) -> Dict:
     Choose the correct Dockerfile template above based on what the project actually is. Do NOT skip any of these three Docker files.
     """
 
-    response = model(prompt)
+    try:
+        response = model(prompt)
+    except RuntimeError as e:
+        print(f"[developer_node] LLM unavailable: {e}. Returning empty source.")
+        return {"source_code": {}, "iterations": current_iterations}
     raw = response.content.strip()
 
     # Strip markdown fences if present
@@ -570,13 +581,14 @@ def developer_node(state: AgencyState) -> Dict:
             lines = lines[:-1]
         raw = "\n".join(lines)
 
-    # Try to parse as JSON dict of files
+    # Try to parse as JSON dict of files.
+    # Use raw_decode to find the FIRST valid JSON object, avoiding the greedy
+    # regex r'\{.*\}' which can span from the first '{' to the last '}'.
     source_code = None
-    json_match = re.search(r'\{.*\}', raw, re.DOTALL)
-    if json_match:
+    brace_pos = raw.find('{')
+    if brace_pos != -1:
         try:
-            parsed = json.loads(json_match.group())
-            # Accept any dict — _normalize_source_files handles non-string values
+            parsed, _ = json.JSONDecoder().raw_decode(raw, brace_pos)
             if isinstance(parsed, dict) and parsed:
                 source_code = parsed
         except json.JSONDecodeError:
