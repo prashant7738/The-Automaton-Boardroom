@@ -25,25 +25,30 @@ from langsmith import traceable
 
 
 
-def model(prompt,temperature = 0.3):
-
+def model(prompt, temperature=0.3):
     try:
         llm = ChatGroq(
             model="llama-3.3-70b-versatile",
             temperature=temperature,
             api_key=os.getenv('GROQ_API_KEY')
         )
+        return llm.invoke(prompt)
 
-        return llm.invoke(prompt)
-    
-    except Exception as e:
-        print(f"groq doesnt get called due to {e}. Now gemini ....")
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash",
-            temperature = temperature,
-            api_key=os.getenv('GOOGLE_API_KEY')
+    except Exception as groq_error:
+        print(f"Groq failed: {groq_error}. Falling back to Gemini...")
+        try:
+            llm = ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash",
+                temperature=temperature,
+                api_key=os.getenv('GOOGLE_API_KEY')
             )
-        return llm.invoke(prompt)
+            return llm.invoke(prompt)
+        except Exception as gemini_error:
+            raise RuntimeError(
+                f"Both LLM providers failed.\n"
+                f"  Groq error:   {groq_error}\n"
+                f"  Gemini error: {gemini_error}"
+            ) from gemini_error
 
        
 
