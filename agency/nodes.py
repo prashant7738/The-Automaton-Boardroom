@@ -174,7 +174,7 @@ def _install_python_deps(sandbox, source_files: dict) -> str:
 
 def _wait_for_port(sandbox, port: int, retries: int = 15, delay: float = 1.5) -> bool:
     """Poll until HTTP server responds on given port inside sandbox."""
-    for _ in range(retries):
+    for attempt in range(retries):
         try:
             check = sandbox.commands.run(
                 f"curl -s http://127.0.0.1:{port}/ -o /dev/null -w '%{{http_code}}'",
@@ -182,8 +182,8 @@ def _wait_for_port(sandbox, port: int, retries: int = 15, delay: float = 1.5) ->
             )
             if check.stdout.strip() in ("200", "301", "302", "404", "405", "422"):
                 return True
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[_wait_for_port] attempt {attempt + 1}/{retries} on port {port} failed: {e}")
         time.sleep(delay)
     return False
 
@@ -220,10 +220,9 @@ def _run_fastapi(sandbox, source_files: dict) -> str:
 
     start_cmd = (
         f"nohup uvicorn {entry_module}:{app_var} "
-        f"--host 0.0.0.0 --port 8000 > /tmp/server.log 2>&1 & echo $!"
+        f"--host 0.0.0.0 --port 8000 > /tmp/server.log 2>&1 &"
     )
-    proc = sandbox.commands.run(start_cmd, timeout=10)
-    pid = proc.stdout.strip()
+    sandbox.commands.run(start_cmd, timeout=10)
 
     ready = _wait_for_port(sandbox, 8000)
     logs.append(f"[server ready: {ready}]")
@@ -239,8 +238,7 @@ def _run_fastapi(sandbox, source_files: dict) -> str:
     server_log = sandbox.commands.run("cat /tmp/server.log 2>&1", timeout=5)
     logs.append(f"[server log]\n{(server_log.stdout or '')[-2000:]}")
 
-    if pid:
-        sandbox.commands.run(f"kill {pid} 2>/dev/null || true", timeout=5)
+    sandbox.commands.run("pkill -f 'uvicorn' 2>/dev/null || true", timeout=5)
     return "\n".join(logs)
 
 
@@ -257,10 +255,9 @@ def _run_django(sandbox, source_files: dict) -> str:
 
     start_cmd = (
         "nohup python manage.py runserver 0.0.0.0:8000 "
-        "> /tmp/server.log 2>&1 & echo $!"
+        "> /tmp/server.log 2>&1 &"
     )
-    proc = sandbox.commands.run(start_cmd, timeout=10)
-    pid = proc.stdout.strip()
+    sandbox.commands.run(start_cmd, timeout=10)
 
     ready = _wait_for_port(sandbox, 8000)
     logs.append(f"[server ready: {ready}]")
@@ -275,8 +272,7 @@ def _run_django(sandbox, source_files: dict) -> str:
     server_log = sandbox.commands.run("cat /tmp/server.log 2>&1", timeout=5)
     logs.append(f"[server log]\n{(server_log.stdout or '')[-2000:]}")
 
-    if pid:
-        sandbox.commands.run(f"kill {pid} 2>/dev/null || true", timeout=5)
+    sandbox.commands.run("pkill -f 'manage.py runserver' 2>/dev/null || true", timeout=5)
     return "\n".join(logs)
 
 
@@ -299,7 +295,7 @@ def _run_react(sandbox, source_files: dict) -> str:
 
     # Catch build errors gracefully so they appear in logs rather than raising
     try:
-        build = sandbox.commands.run("npm run build 2>&1", timeout=180)
+        build = sandbox.commands.run("npm run build 2>&1", timeout=600)
         build_out = (build.stdout or build.stderr or "")[-800:]
         build_failed = build.exit_code != 0
     except CommandExitException as e:
@@ -319,10 +315,9 @@ def _run_react(sandbox, source_files: dict) -> str:
     serve_dir = "dist" if is_vite else "build"
     start_cmd = (
         f"nohup npx serve -s {serve_dir} -l 3000 "
-        f"> /tmp/serve.log 2>&1 & echo $!"
+        f"> /tmp/serve.log 2>&1 &"
     )
-    proc = sandbox.commands.run(start_cmd, timeout=10)
-    pid = proc.stdout.strip()
+    sandbox.commands.run(start_cmd, timeout=10)
 
     ready = _wait_for_port(sandbox, 3000)
     logs.append(f"[serve ready: {ready}]")
@@ -337,8 +332,7 @@ def _run_react(sandbox, source_files: dict) -> str:
     serve_log = sandbox.commands.run("cat /tmp/serve.log 2>&1", timeout=5)
     logs.append(f"[serve log]\n{(serve_log.stdout or '')[-1000:]}")
 
-    if pid:
-        sandbox.commands.run(f"kill {pid} 2>/dev/null || true", timeout=5)
+    sandbox.commands.run("pkill -f 'npx serve' 2>/dev/null || true", timeout=5)
     return "\n".join(logs)
 
 
