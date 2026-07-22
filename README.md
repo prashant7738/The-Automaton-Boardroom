@@ -13,17 +13,40 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 - ✅ **Full Development Lifecycle**: Spec → Code → Test → Self-Correct → Human Review → Delivery
 - ✅ **Self-Healing AI**: Automatically detects and fixes bugs through iterative testing
 - ✅ **Isolated Execution**: Secure E2B sandbox prevents malicious code execution
-- ✅ **Prompt-Safety Guardrails**: User-provided ideas, logs, and inputs are wrapped and scanned to reduce prompt injection risk
-- ✅ **LLM Provider Resilience**: Groq is tried first, then Gemini fallback is used if needed, with clear failure reporting
+- ✅ **Prompt-Safety Guardrails**: User inputs are wrapped, scanned for injection, and length-capped before reaching any LLM
+- ✅ **LLM Provider Resilience**: Groq is tried first; Gemini is used as fallback; clear errors when both fail — no silent crashes
 - ✅ **Human-in-the-Loop**: Pause and approve before final deployment
-- ✅ **Zero Dependencies Cost**: Uses only free-tier APIs (Google Gemini, E2B, LangSmith)
+- ✅ **Zero Dependencies Cost**: Uses only free-tier APIs (Groq, Google Gemini, E2B, LangSmith)
 - ✅ **Full Observability**: LangSmith tracing for debugging and performance monitoring
 - ✅ **Streamlit UI**: Beautiful, interactive web interface for non-technical users
+- ✅ **Robust Sandbox Cleanup**: Servers killed by process name (`pkill -f`) — no stale processes from wrong-PID bugs
+- ✅ **Accurate Log Capture**: Truncation limits raised so build/runtime errors are fully visible
 
 ---
 
 ## 🆕 Recent Updates
 
+### Reliability & Safety Hardening (July 2026)
+
+**LLM & Node Robustness**
+- All agent nodes (`pm_node`, `input_collector_node`, `developer_node`) now wrap `model()` calls in `try/except RuntimeError` — an LLM outage no longer crashes the entire pipeline.
+- JSON extraction in `developer_node` now uses `json.JSONDecoder().raw_decode()` instead of a greedy `re.search(r'\{.*\}')` regex, so embedded JSON objects with trailing text are parsed correctly.
+- Prompt now explicitly permits a ` ```json ``` ` fence (which is stripped automatically) instead of saying "No markdown fences" while the code secretly strips them.
+
+**Sandbox Execution**
+- `npm run build` timeout raised from 180 s → 600 s, preventing false-fail on large React projects.
+- `_wait_for_port()` now logs each failed poll attempt instead of silently swallowing exceptions.
+- All background server processes (`uvicorn`, `manage.py runserver`, `npx serve`) are now killed with `pkill -f <name>` rather than `kill $!`, which previously captured the shell PID instead of the actual server PID.
+- Log truncation limits increased (800 → 3 000 chars for build/install output; 500 → 2 000 chars for Django migrations) so the root cause of failures is visible in logs.
+- Vite detection no longer false-positives on `"vite"` appearing in the package `name` or `description` field — it now only checks `dependencies` / `devDependencies`.
+
+**UI & Thread Safety**
+- `_reset()` now calls `executor.shutdown(wait=False)` before discarding the `ThreadPoolExecutor`, preventing thread accumulation across pipeline runs.
+- The running-phase polling interval reduced from 2 s → 0.5 s, cutting idle CPU usage without affecting responsiveness.
+- `_get_graph_interrupt()` access to `task.interrupts[0]` is now guarded with `try/except IndexError` to handle the race condition where a background thread consumes the interrupt between the truthiness check and the index access.
+- All user-facing text inputs now enforce maximum character limits (`app_idea`: 2 000; runtime inputs: 500; rejection reason: 500) to prevent oversized payloads from reaching generated files.
+
+**Previous Updates**
 - Added safer LLM prompt handling so user ideas, specifications, logs, and runtime inputs are treated as data instead of instructions.
 - Improved model fallback behavior so Groq failures now fall back cleanly to Gemini, and both-provider failures are reported clearly.
 - Updated React/Vite generation and sandbox install behavior so generated apps install `vite` and `@vitejs/plugin-react` reliably before build.
@@ -361,12 +384,15 @@ SANDBOX_RAM_MB = 512  # E2B sandbox memory allocation
 |-------|----------|
 | `uv: command not found` | Install uv: `pip install uv` or follow [uv installation](https://docs.astral.sh/uv/#installation) |
 | `GOOGLE_API_KEY not found` | Verify `.env` file exists in root directory with correct key format |
+| `GROQ_API_KEY not found` | Add your Groq key to `.env`; Gemini is used as automatic fallback if Groq is missing |
 | `E2B_API_KEY invalid` | Check key hasn't expired; regenerate at [e2b.dev](https://e2b.dev) |
 | `Streamlit port 8501 already in use` | `uv run streamlit run app.py -- --server.port 8502` |
 | `ModuleNotFoundError: No module named 'langgraph'` | Run `uv sync` to install all dependencies |
 | `LangSmith not connecting` | Set `LANGCHAIN_TRACING_V2=false` or check API key validity |
 | `E2B sandbox quota exceeded` | Check usage at E2B dashboard; free tier = 100 hrs/month |
-| `sh: vite: not found` during React build | Re-run generation after the latest fixes; React/Vite installs now force dev dependencies and include `vite` + `@vitejs/plugin-react` |
+| `sh: vite: not found` during React build | Re-run generation; Vite detection now only checks `dependencies`/`devDependencies`, and `vite` + `@vitejs/plugin-react` are always included |
+| `npm run build` times out | Build timeout is now 600 s; if your project consistently exceeds this, consider breaking it into smaller modules |
+| Pipeline crashes with `RuntimeError: Both LLM providers failed` | Check that both `GROQ_API_KEY` and `GOOGLE_API_KEY` in `.env` are valid and have remaining quota |
 
 ### Useful uv Commands
 
@@ -476,7 +502,7 @@ Distributed under the MIT License. See LICENSE for more information.
 
 **Built with ❤️ using LangGraph, LangSmith & E2B**
 
-*Last Updated: May 2026*
+*Last Updated: July 2026*
 
 
 To run graph:
