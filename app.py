@@ -49,7 +49,12 @@ def _get_graph_interrupt():
         return None, True  # no pending node → workflow finished
     for task in snap.tasks:
         if hasattr(task, "interrupts") and task.interrupts:
-            return task.interrupts[0].value, False
+            try:
+                return task.interrupts[0].value, False
+            except IndexError:
+                # Background thread may have consumed the interrupt between
+                # the truthiness check above and the index access — skip it.
+                pass
     return None, False  # running but no interrupt surfaced yet
 
 
@@ -175,6 +180,7 @@ if st.session_state.phase == "idle":
         key="idea_text",
         placeholder="e.g. Build a FastAPI REST API with CRUD operations for a todo list",
         height=120,
+        max_chars=2000,
         label_visibility="collapsed",
     )
 
@@ -312,8 +318,8 @@ elif st.session_state.phase == "input_request":
                 val = st.number_input(desc, format="%f", key=f"inp_{name}")
                 answers[name] = str(val)
             else:
-                val = st.text_input(desc, key=f"inp_{name}")
-                answers[name] = val
+                val = st.text_input(desc, key=f"inp_{name}", max_chars=500)
+                answers[name] = val[:500]
 
         submitted = st.form_submit_button("▶ Submit & Continue", type="primary", use_container_width=True)
 
@@ -389,6 +395,7 @@ elif st.session_state.phase == "human_review":
             "Rejection reason",
             placeholder="e.g. The API is missing authentication",
             label_visibility="collapsed",
+            max_chars=500,
         )
         if st.button(
             "🔁 Reject & Revise",

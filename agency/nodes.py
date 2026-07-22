@@ -165,10 +165,10 @@ def _install_python_deps(sandbox, source_files: dict) -> str:
     """Install Python deps from requirements.txt or pyproject.toml. Return log."""
     if "requirements.txt" in source_files:
         r = sandbox.commands.run("pip install -r requirements.txt 2>&1", timeout=120)
-        return (r.stdout or r.stderr or "")[:800]
+        return (r.stdout or r.stderr or "")[-3000:]
     if "pyproject.toml" in source_files:
         r = sandbox.commands.run("pip install -e . 2>&1", timeout=120)
-        return (r.stdout or r.stderr or "")[:800]
+        return (r.stdout or r.stderr or "")[-3000:]
     return ""
 
 
@@ -251,7 +251,7 @@ def _run_django(sandbox, source_files: dict) -> str:
     migrate = sandbox.commands.run(
         "python manage.py migrate --no-input 2>&1", timeout=60
     )
-    logs.append(f"[migrate]\n{(migrate.stdout or migrate.stderr or '')[:500]}")
+    logs.append(f"[migrate]\n{(migrate.stdout or migrate.stderr or '')[-2000:]}")
 
     start_cmd = (
         "nohup python manage.py runserver 0.0.0.0:8000 "
@@ -296,12 +296,12 @@ def _run_react(sandbox, source_files: dict) -> str:
     # Catch build errors gracefully so they appear in logs rather than raising
     try:
         build = sandbox.commands.run("npm run build 2>&1", timeout=600)
-        build_out = (build.stdout or build.stderr or "")[-800:]
+        build_out = (build.stdout or build.stderr or "")[-3000:]
         build_failed = build.exit_code != 0
     except CommandExitException as e:
         stderr = getattr(e, "stderr", "") or ""
         stdout = getattr(e, "stdout", "") or ""
-        build_out = (stderr + stdout or str(e))[-800:]
+        build_out = (stderr + stdout or str(e))[-3000:]
         build_failed = True
     logs.append(f"[build]\n{build_out}")
 
