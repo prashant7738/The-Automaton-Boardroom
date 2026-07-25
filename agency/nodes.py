@@ -548,6 +548,7 @@ def developer_node(state: AgencyState) -> Dict:
        *.pyc
        *.pyo
        .env
+       .env.example
        .venv
        venv
        node_modules
@@ -559,6 +560,7 @@ def developer_node(state: AgencyState) -> Dict:
     3. "docker-compose.yml" — mounts .env and exposes the correct port:
        Use the port matching the stack (8000 for FastAPI, 8501 for Streamlit, 3000 for React, none for plain scripts).
        Do NOT include a "version" field — it is obsolete in Compose v2 and causes a warning.
+       Use "required: false" on env_file so Docker Compose does not fail when .env is absent.
        Example:
        services:
          app:
@@ -566,10 +568,18 @@ def developer_node(state: AgencyState) -> Dict:
            ports:
              - "8000:8000"
            env_file:
-             - .env
+             - path: .env
+               required: false
            restart: unless-stopped
 
-    Choose the correct Dockerfile template above based on what the project actually is. Do NOT skip any of these three Docker files.
+    4. ".env.example" — list every environment variable the app reads (via os.getenv, os.environ, process.env, etc.)
+       with placeholder values so the user knows what to fill in before running. NEVER put real secrets here.
+       Example:
+       DATABASE_URL=your_database_url_here
+       SECRET_KEY=your_secret_key_here
+       API_KEY=your_api_key_here
+
+    Choose the correct Dockerfile template above based on what the project actually is. Do NOT skip any of these four Docker/env files.
     """
 
     try:
