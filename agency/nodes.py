@@ -460,6 +460,32 @@ def _fix_react_structure(source_files: dict) -> dict:
         del files[fname]
     files.update(renamed)
 
+    # Fix vite/plugin-react version incompatibility.
+    # @vitejs/plugin-react@4.x requires vite@^4.2.0 or newer.
+    # If the model pins vite to ^3.x or lower, bump it to ^4.2.0.
+    if "package.json" in files:
+        try:
+            pkg = json.loads(files["package.json"])
+            changed = False
+            for dep_section in ("devDependencies", "dependencies"):
+                deps = pkg.get(dep_section, {})
+                vite_ver = deps.get("vite", "")
+                # Match semver ranges like ^3.2.3, ~3.x, 3.x.x, >=3 <4, etc.
+                major_match = re.match(r'[\^~><=]*(\d+)', vite_ver.strip())
+                if major_match and int(major_match.group(1)) < 4:
+                    deps["vite"] = "^4.2.0"
+                    changed = True
+                # Also ensure @vitejs/plugin-react is >=4.0.0 when present
+                pr_ver = deps.get("@vitejs/plugin-react", "")
+                pr_match = re.match(r'[\^~><=]*(\d+)', pr_ver.strip())
+                if pr_match and int(pr_match.group(1)) < 4:
+                    deps["@vitejs/plugin-react"] = "^4.0.0"
+                    changed = True
+            if changed:
+                files["package.json"] = json.dumps(pkg, indent=2)
+        except (json.JSONDecodeError, AttributeError):
+            pass  # malformed package.json — leave as-is
+
     return files
 
 
