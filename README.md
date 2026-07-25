@@ -19,6 +19,7 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 - ✅ **Zero Dependencies Cost**: Uses only free-tier APIs (Groq, Google Gemini, E2B, LangSmith)
 - ✅ **Full Observability**: LangSmith tracing for debugging and performance monitoring
 - ✅ **Streamlit UI**: Beautiful, interactive web interface for non-technical users
+- ✅ **Stack-Aware Prompt Skills**: Injects frontend, backend, or plain-Python guidance into the developer prompt so generated code better matches the requested stack
 - ✅ **Robust Sandbox Cleanup**: Servers killed by process name (`pkill -f`) — no stale processes from wrong-PID bugs
 - ✅ **Accurate Log Capture**: Truncation limits raised so build/runtime errors are fully visible
 
@@ -27,6 +28,11 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 ## 🆕 Recent Updates
 
 ### Reliability & Safety Hardening (July 2026)
+
+**Stack-Aware Code Generation**
+- The developer prompt now injects stack-specific skill blocks based on the app spec, so React/Vite requests get frontend design guidance, FastAPI requests get backend API guidance, and plain Python requests get simpler script guidance.
+- Frontend guidance emphasizes Tailwind CSS, responsive layout, semantic structure, accessibility, loading states, and modern component primitives.
+- Backend guidance emphasizes FastAPI structure, validation, structured errors, async handlers, and environment-based secrets.
 
 **LLM & Node Robustness**
 - All agent nodes (`pm_node`, `input_collector_node`, `developer_node`) now wrap `model()` calls in `try/except RuntimeError` — an LLM outage no longer crashes the entire pipeline.
