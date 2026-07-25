@@ -640,6 +640,47 @@ def _fix_react_structure(source_files: dict) -> dict:
         except (json.JSONDecodeError, AttributeError):
             pass
 
+    # --- Tailwind CSS: inject missing config files if tailwindcss is a dependency ---
+    # postcss.config.js and tailwind.config.js are both required for Tailwind to work
+    # with Vite. If the LLM omits either, the build succeeds but classes are unstyled.
+    _TAILWIND_POSTCSS = (
+        "export default {\n"
+        "  plugins: { tailwindcss: {}, autoprefixer: {} },\n"
+        "};\n"
+    )
+    _TAILWIND_CONFIG = (
+        "/** @type {import('tailwindcss').Config} */\n"
+        "export default {\n"
+        "  content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],\n"
+        "  theme: { extend: {} },\n"
+        "  plugins: [],\n"
+        "};\n"
+    )
+    for pkg_key in ("package.json", "frontend/package.json"):
+        if pkg_key not in files:
+            continue
+        try:
+            pkg = json.loads(files[pkg_key])
+            all_deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+            if "tailwindcss" not in all_deps:
+                continue
+            prefix = "frontend/" if pkg_key.startswith("frontend/") else ""
+            if f"{prefix}postcss.config.js" not in files:
+                files[f"{prefix}postcss.config.js"] = _TAILWIND_POSTCSS
+            if f"{prefix}tailwind.config.js" not in files:
+                files[f"{prefix}tailwind.config.js"] = _TAILWIND_CONFIG
+            # Ensure postcss and autoprefixer are listed as devDependencies
+            dev = pkg.setdefault("devDependencies", {})
+            changed = False
+            for pkg_name in ("postcss", "autoprefixer"):
+                if pkg_name not in all_deps:
+                    dev[pkg_name] = "latest"
+                    changed = True
+            if changed:
+                files[pkg_key] = json.dumps(pkg, indent=2)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
     return files
 
 
