@@ -351,6 +351,94 @@ def _run_react(sandbox, source_files: dict) -> str:
     return "\n".join(logs)
 
 
+def _run_fullstack(sandbox, source_files: dict) -> str:
+    """Run a full-stack project: FastAPI backend (port 8000) + React/Vite frontend (port 3000)."""
+    logs = []
+
+    # --- Backend ---
+    backend_files = {k: v for k, v in source_files.items() if k.startswith("backend/")}
+
+    if "backend/requirements.txt" in source_files:
+        r = sandbox.commands.run("cd backend && pip install -r requirements.txt 2>&1", timeout=120)
+        logs.append(f"[backend install]\n{(r.stdout or r.stderr or '')[-2000:]}")
+
+    entry_module, app_var = "main", "app"
+    for fname, content in backend_files.items():
+        if fname.endswith(".py") and "FastAPI(" in content:
+            rel = fname[len("backend/"):].replace(".py", "").replace("/", ".")
+            entry_module = rel
+            m = re.search(r'(\w+)\s*=\s*FastAPI\(', content)
+            if m:
+                app_var = m.group(1)
+            break
+
+    sandbox.commands.run(
+        f"cd backend && nohup uvicorn {entry_module}:{app_var} "
+        f"--host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 &",
+        timeout=10,
+    )
+    backend_ready = _wait_for_port(sandbox, 8000)
+    logs.append(f"[backend ready: {backend_ready}]")
+
+    if backend_ready:
+        for endpoint in ["/", "/docs", "/openapi.json"]:
+            r = sandbox.commands.run(
+                f"curl -s -o /dev/null -w '%{{http_code}}' http://127.0.0.1:8000{endpoint}",
+                timeout=10,
+            )
+            logs.append(f"GET backend{endpoint} -> {r.stdout.strip()}")
+
+    backend_log = sandbox.commands.run("cat /tmp/backend.log 2>&1", timeout=5)
+    logs.append(f"[backend log]\n{(backend_log.stdout or '')[-2000:]}")
+
+    # --- Frontend ---
+    install_cmd = (
+        "cd frontend && NODE_ENV=development NODE_OPTIONS=--max-old-space-size=1536 npm install "
+        "--no-audit --no-fund --legacy-peer-deps --include=dev --silent 2>&1"
+    )
+    install = sandbox.commands.run(install_cmd, timeout=300)
+    logs.append(f"[frontend npm install]\n{(install.stdout or install.stderr or '')[-1200:]}")
+
+    try:
+        build = sandbox.commands.run("cd frontend && npm run build 2>&1", timeout=600)
+        build_out = (build.stdout or build.stderr or "")[-3000:]
+        build_failed = build.exit_code != 0
+    except CommandExitException as e:
+        stderr = getattr(e, "stderr", "") or ""
+        stdout = getattr(e, "stdout", "") or ""
+        build_out = (stderr + stdout or str(e))[-3000:]
+        build_failed = True
+    logs.append(f"[frontend build]\n{build_out}")
+
+    if build_failed:
+        logs.append("[test result] frontend build failed")
+        return "\n".join(logs)
+
+    sandbox.commands.run(
+        "nohup npx serve -s frontend/dist -l 3000 > /tmp/serve.log 2>&1 &",
+        timeout=10,
+    )
+    frontend_ready = _wait_for_port(sandbox, 3000)
+    logs.append(f"[frontend serve ready: {frontend_ready}]")
+
+    if frontend_ready:
+        r = sandbox.commands.run(
+            "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/",
+            timeout=10,
+        )
+        logs.append(f"GET frontend / -> {r.stdout.strip()}")
+
+    serve_log = sandbox.commands.run("cat /tmp/serve.log 2>&1", timeout=5)
+    logs.append(f"[serve log]\n{(serve_log.stdout or '')[-1000:]}")
+
+    try:
+        sandbox.commands.run("pkill -f 'uvicorn' 2>/dev/null || true", timeout=5)
+        sandbox.commands.run("pkill -f 'npx serve' 2>/dev/null || true", timeout=5)
+    except Exception:
+        pass
+    return "\n".join(logs)
+
+
 # ---------------------------------------------------------------------------
 
 def _normalize_source_files(source_files: dict) -> dict:
@@ -486,6 +574,72 @@ def _fix_react_structure(source_files: dict) -> dict:
         except (json.JSONDecodeError, AttributeError):
             pass  # malformed package.json — leave as-is
 
+    # --- Full-stack layout: same fixes for frontend/ prefix ---
+    for wrong in ("frontend/src/vite.config.js", "frontend/src/vite.config.ts", "frontend/src/vite.config.jsx"):
+        if wrong in files:
+            correct = "frontend/" + wrong.split("/", 2)[2]
+            if correct not in files:
+                files[correct] = files.pop(wrong)
+            else:
+                del files[wrong]
+
+    has_frontend_vite = "frontend/vite.config.js" in files or "frontend/vite.config.ts" in files
+    if has_frontend_vite and "frontend/public/index.html" in files and "frontend/index.html" not in files:
+        files["frontend/index.html"] = files.pop("frontend/public/index.html")
+
+    if "frontend/index.html" in files:
+        html = files["frontend/index.html"]
+        jsx_entry = None
+        for candidate in ("frontend/src/main.jsx", "frontend/src/index.jsx",
+                          "frontend/src/main.tsx", "frontend/src/index.tsx"):
+            if candidate in files:
+                jsx_entry = "/src/" + candidate.split("/src/", 1)[1]
+                break
+        if jsx_entry:
+            import re as _re
+            html = _re.sub(
+                r'(<script[^>]+type=["\']module["\'][^>]+src=["\'])([^"\']+)(["\'])',
+                lambda m: m.group(1) + jsx_entry + m.group(3),
+                html,
+            )
+            files["frontend/index.html"] = html
+
+    # Rename .js → .jsx for frontend/src/ files containing JSX
+    renamed_fs: dict = {}
+    to_delete_fs: list = []
+    for fname, content in files.items():
+        if fname.endswith(".js") and fname.startswith("frontend/src/"):
+            if any(marker in content for marker in _JSX_MARKERS):
+                new_name = fname[:-3] + ".jsx"
+                if new_name not in files:
+                    renamed_fs[new_name] = content
+                    to_delete_fs.append(fname)
+    for fname in to_delete_fs:
+        del files[fname]
+    files.update(renamed_fs)
+
+    # Fix vite version in frontend/package.json too
+    if "frontend/package.json" in files:
+        try:
+            pkg = json.loads(files["frontend/package.json"])
+            changed = False
+            for dep_section in ("devDependencies", "dependencies"):
+                deps = pkg.get(dep_section, {})
+                vite_ver = deps.get("vite", "")
+                major_match = re.match(r'[\^~><=]*(\d+)', vite_ver.strip())
+                if major_match and int(major_match.group(1)) < 4:
+                    deps["vite"] = "^4.2.0"
+                    changed = True
+                pr_ver = deps.get("@vitejs/plugin-react", "")
+                pr_match = re.match(r'[\^~><=]*(\d+)', pr_ver.strip())
+                if pr_match and int(pr_match.group(1)) < 4:
+                    deps["@vitejs/plugin-react"] = "^4.0.0"
+                    changed = True
+            if changed:
+                files["frontend/package.json"] = json.dumps(pkg, indent=2)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
     return files
 
 
@@ -526,6 +680,11 @@ def developer_node(state: AgencyState) -> Dict:
     - CRITICAL for React/Vite: Any file containing JSX syntax MUST use the .jsx (or .tsx) extension. Files named .js that contain JSX will cause a Vite parse error.
     - CRITICAL for React/Vite: "package.json" devDependencies MUST always include "vite" and "@vitejs/plugin-react". Missing these causes "sh: vite: not found" at build time. Example devDependencies: {{"vite": "^5.0.0", "@vitejs/plugin-react": "^4.0.0"}}.
     - CRITICAL for React/Vite: "vite.config.js" MUST always include @vitejs/plugin-react plugin AND the defineConfig import. Example: import {{ defineConfig }} from 'vite'; import react from '@vitejs/plugin-react'; export default defineConfig({{ plugins: [react()] }}).
+    - Example for Full-Stack (FastAPI + React/Vite): {{"backend/main.py": "...", "backend/requirements.txt": "fastapi\nuvicorn\npython-multipart", "frontend/package.json": "...", "frontend/vite.config.js": "...", "frontend/index.html": "...", "frontend/src/main.jsx": "...", "frontend/src/App.jsx": "...", "backend/Dockerfile": "...", "frontend/Dockerfile": "...", "docker-compose.yml": "...", ".dockerignore": "...", ".env.example": "..."}}
+    - CRITICAL for Full-Stack: Place ALL backend files under "backend/" and ALL frontend files under "frontend/". Do NOT mix them at the project root.
+    - CRITICAL for Full-Stack: The FastAPI backend MUST include CORS middleware so the React frontend can call it. Add: from fastapi.middleware.cors import CORSMiddleware and app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]).
+    - CRITICAL for Full-Stack: "frontend/vite.config.js" MUST be directly inside "frontend/", NOT in "frontend/src/". All Vite rules apply relative to the frontend/ root.
+    - CRITICAL for Full-Stack: Use SEPARATE Dockerfiles — "backend/Dockerfile" for FastAPI and "frontend/Dockerfile" for React/Vite. Do NOT use a single root-level Dockerfile for full-stack.
     - Return ONLY the raw JSON object. If you must wrap it in a markdown code fence, use ```json ... ``` — the fence will be stripped automatically.
 
     DOCKER RULES — you MUST always include these three files in every output:
@@ -571,6 +730,53 @@ def developer_node(state: AgencyState) -> Dict:
        COPY --from=builder /app/dist ./dist
        EXPOSE 3000
        CMD ["serve", "-s", "dist", "-l", "3000"]
+
+       Full-Stack (FastAPI + React/Vite) — use SEPARATE Dockerfiles and a multi-service docker-compose.yml:
+
+       "backend/Dockerfile":
+       FROM python:3.11-slim
+       WORKDIR /app
+       COPY requirements.txt ./
+       RUN pip install --no-cache-dir -r requirements.txt
+       COPY . .
+       EXPOSE 8000
+       CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+       "frontend/Dockerfile":
+       FROM node:20-alpine AS builder
+       WORKDIR /app
+       COPY package*.json ./
+       RUN npm install
+       COPY . .
+       RUN npm run build
+       FROM node:20-alpine
+       RUN npm install -g serve
+       WORKDIR /app
+       COPY --from=builder /app/dist ./dist
+       EXPOSE 3000
+       CMD ["serve", "-s", "dist", "-l", "3000"]
+
+       "docker-compose.yml" for full-stack (use this instead of the single-service example below):
+       services:
+         backend:
+           build:
+             context: ./backend
+             dockerfile: Dockerfile
+           ports:
+             - "8000:8000"
+           env_file:
+             - path: .env
+               required: false
+           restart: unless-stopped
+         frontend:
+           build:
+             context: ./frontend
+             dockerfile: Dockerfile
+           ports:
+             - "3000:3000"
+           depends_on:
+             - backend
+           restart: unless-stopped
 
     2. ".dockerignore":
        __pycache__
@@ -658,11 +864,16 @@ def tester_node(state: AgencyState) -> Dict:
 
     # Detect project type from file tree and source content
     all_source = " ".join(source_files.values()).lower()
-    has_package_json  = "package.json" in source_files
+    has_package_json  = "package.json" in source_files or "frontend/package.json" in source_files
     has_manage_py     = "manage.py" in source_files
     is_fastapi = "fastapi" in all_source and not has_manage_py
     is_django  = has_manage_py or ("django" in all_source and not has_package_json)
     is_react   = has_package_json
+    # Full-stack: dedicated frontend/ and backend/ subdirectories present together
+    is_fullstack = (
+        any(k.startswith("frontend/") for k in source_files)
+        and any(k.startswith("backend/") for k in source_files)
+    )
 
     with Sandbox.create() as sandbox:
         # Write full project tree into sandbox
@@ -670,7 +881,9 @@ def tester_node(state: AgencyState) -> Dict:
             sandbox.files.write(filepath, content)
 
         try:
-            if is_react:
+            if is_fullstack:
+                logs = _run_fullstack(sandbox, source_files)
+            elif is_react:
                 logs = _run_react(sandbox, source_files)
             elif is_django:
                 logs = _run_django(sandbox, source_files)
