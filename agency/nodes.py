@@ -496,7 +496,7 @@ def developer_node(state: AgencyState) -> Dict:
     - CRITICAL for React/Vite: "index.html" MUST reference the entry point as: <script type="module" src="/src/main.jsx"></script> (or .tsx). Point to the actual file under src/, not "src/index.js" or "main.js".
     - CRITICAL for React/Vite: Any file containing JSX syntax MUST use the .jsx (or .tsx) extension. Files named .js that contain JSX will cause a Vite parse error.
     - CRITICAL for React/Vite: "package.json" devDependencies MUST always include "vite" and "@vitejs/plugin-react". Missing these causes "sh: vite: not found" at build time. Example devDependencies: {{"vite": "^5.0.0", "@vitejs/plugin-react": "^4.0.0"}}.
-    - CRITICAL for React/Vite: "vite.config.js" MUST always include @vitejs/plugin-react plugin. Example: import react from '@vitejs/plugin-react'; export default { plugins: [react()] }.
+    - CRITICAL for React/Vite: "vite.config.js" MUST always include @vitejs/plugin-react plugin AND the defineConfig import. Example: import {{ defineConfig }} from 'vite'; import react from '@vitejs/plugin-react'; export default defineConfig({{ plugins: [react()] }}).
     - Return ONLY the raw JSON object. If you must wrap it in a markdown code fence, use ```json ... ``` — the fence will be stripped automatically.
 
     DOCKER RULES — you MUST always include these three files in every output:
