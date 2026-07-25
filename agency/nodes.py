@@ -344,7 +344,10 @@ def _run_react(sandbox, source_files: dict) -> str:
     serve_log = sandbox.commands.run("cat /tmp/serve.log 2>&1", timeout=5)
     logs.append(f"[serve log]\n{(serve_log.stdout or '')[-1000:]}")
 
-    sandbox.commands.run("pkill -f 'npx serve' 2>/dev/null || true", timeout=5)
+    try:
+        sandbox.commands.run("pkill -f 'npx serve'", timeout=5)
+    except Exception:
+        pass  # process may have already exited; ignore
     return "\n".join(logs)
 
 
