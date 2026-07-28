@@ -138,12 +138,18 @@ automaton-boardroom/
 ├── pyproject.toml              # Project config & dependencies (uv)
 ├── uv.lock                     # Locked dependency versions (auto-generated)
 ├── app.py                      # Streamlit UI entry point
+├── main.py                     # CLI entry point
 │
-└── agency/                     # Core LangGraph package
-    ├── __init__.py
-    ├── states.py              # TypedDict state machine definition
-    ├── nodes.py               # Agent implementations & E2B tools
-    └── graph.py               # Node routing & conditional loops
+├── agency/                     # Core LangGraph package
+│   ├── __init__.py
+│   ├── states.py              # TypedDict state machine definition
+│   ├── guards.py              # Prompt-injection guard & untrusted-JSON validation
+│   ├── sandbox_runners.py     # E2B sandbox orchestration per stack (FastAPI/Django/React/full-stack)
+│   ├── nodes.py               # Agent node implementations (PM, Dev, Tester, Human)
+│   └── graph.py               # Node routing & conditional loops
+│
+├── tests/                      # Unit test suite (pytest)
+└── scripts/                     # Manual/integration smoke-test scripts
 ```
 
 ---
@@ -320,14 +326,18 @@ uv run black . && uv run isort . && uv run ruff check . && uv run mypy agency/
 automaton-boardroom/
 ├── agency/                     # Main package
 │   ├── __init__.py
-│   ├── state.py               # State machine definition
-│   ├── nodes.py               # Agent implementations
-│   └── graph.py               # LangGraph workflow
+│   ├── states.py              # State machine definition
+│   ├── guards.py               # Prompt-injection guard & untrusted-JSON validation
+│   ├── sandbox_runners.py      # E2B sandbox orchestration per stack
+│   ├── nodes.py                # Agent node implementations
+│   └── graph.py                # LangGraph workflow
 ├── tests/                      # Test suite
 │   ├── __init__.py
-│   ├── test_state.py
-│   ├── test_nodes.py
-│   └── test_graph.py
+│   ├── test_sanitize.py
+│   ├── test_router.py
+│   └── test_input_collector.py
+├── scripts/                     # Manual/integration smoke-test scripts
+│   └── manual_smoke_test_react.py
 ├── app.py                      # Streamlit entry point
 ├── pyproject.toml              # Project config with uv
 ├── uv.lock                     # Dependency lock file

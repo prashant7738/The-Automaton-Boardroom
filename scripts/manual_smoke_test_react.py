@@ -1,4 +1,9 @@
-"""Quick smoke-test: run tester_node against a minimal React (Vite) project."""
+"""Quick smoke-test: run tester_node against a minimal React (Vite) project.
+
+Manual/integration script — spins up a real E2B sandbox and runs npm install
++ build, so it needs a valid E2B_API_KEY in .env and is NOT part of the
+automated pytest suite. Run directly: `python scripts/manual_smoke_test_react.py`
+"""
 from dotenv import load_dotenv
 load_dotenv()
 
