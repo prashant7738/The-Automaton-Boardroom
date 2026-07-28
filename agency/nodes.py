@@ -28,9 +28,11 @@ from langsmith import traceable
 # Prompt injection guard
 # ---------------------------------------------------------------------------
 _INJECTION_PATTERNS = [
-    r'ignore (all |previous |above |prior )?(instructions?|rules?|prompts?)',
-    r'disregard (all |previous |above |prior )?(instructions?|rules?|prompts?)',
-    r'forget (all |previous |above |prior )?(instructions?|rules?|prompts?)',
+    # (all |previous |above |prior )* uses * instead of ? so that stacked
+    # qualifiers ("all prior", "all previous above", etc.) are still caught.
+    r'ignore (all |previous |above |prior )*(instructions?|rules?|prompts?)',
+    r'disregard (all |previous |above |prior )*(instructions?|rules?|prompts?)',
+    r'forget (all |previous |above |prior )*(instructions?|rules?|prompts?)',
     r'you are now',
     r'new (persona|role|identity)',
     r'system prompt',
