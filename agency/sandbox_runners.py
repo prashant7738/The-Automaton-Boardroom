@@ -135,15 +135,27 @@ def _run_react(sandbox, source_files: dict) -> str:
     # limit Node's heap for npm to avoid OOM in constrained sandboxes and
     # use conservative flags to speed up install.
     if "package-lock.json" in source_files or "npm-shrinkwrap.json" in source_files:
-        install_cmd = "NODE_ENV=development npm ci --include=dev --silent 2>&1"
+        install_cmd = "NODE_ENV=development npm ci --include=dev 2>&1"
     else:
         install_cmd = (
             "NODE_ENV=development NODE_OPTIONS=--max-old-space-size=1536 npm install "
-            "--no-audit --no-fund --legacy-peer-deps --include=dev --silent 2>&1"
+            "--no-audit --no-fund --legacy-peer-deps --include=dev 2>&1"
         )
 
-    install = sandbox.commands.run(install_cmd, timeout=300)
-    logs.append(f"[npm install]\n{(install.stdout or install.stderr or '')[-1200:]}")
+    try:
+        install = sandbox.commands.run(install_cmd, timeout=300)
+        install_out = (install.stdout or install.stderr or "")[-1200:]
+        install_failed = install.exit_code != 0
+    except CommandExitException as e:
+        stderr = getattr(e, "stderr", "") or ""
+        stdout = getattr(e, "stdout", "") or ""
+        install_out = (stderr + stdout or str(e))[-1200:]
+        install_failed = True
+    logs.append(f"[npm install]\n{install_out}")
+
+    if install_failed:
+        logs.append("[test result] npm install failed")
+        return "\n".join(logs)
 
     # Catch build errors gracefully so they appear in logs rather than raising
     try:
