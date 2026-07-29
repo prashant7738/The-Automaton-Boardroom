@@ -442,6 +442,17 @@ def _fix_react_structure(source_files: dict) -> dict:
     # shadcn/ui is distributed as copy-paste source, NOT an installable npm package.
     # If the model adds it as a dependency, `npm install` fails with ETARGET.
     _INVALID_NPM_DEPS = {"shadcn/ui", "@shadcn/ui", "shadcn-ui", "shadcn"}
+    # Force known-good versions for shadcn/ui-adjacent runtime deps. The LLM
+    # frequently hallucinates majors that don't exist on npm (e.g.
+    # class-variance-authority@^1.0.0 — real latest is 0.7.x), causing
+    # ETARGET. Whichever section they appear in, overwrite the version.
+    _RUNTIME_DEP_PINS = {
+        "class-variance-authority": "^0.7.0",
+        "clsx": "^2.1.0",
+        "tailwind-merge": "^2.5.0",
+        "tailwindcss-animate": "^1.0.7",
+        "lucide-react": "^0.400.0",
+    }
     for pkg_key in ("package.json", "frontend/package.json"):
         if pkg_key not in files:
             continue
@@ -453,6 +464,10 @@ def _fix_react_structure(source_files: dict) -> dict:
                 for bad in list(deps.keys()):
                     if bad in _INVALID_NPM_DEPS:
                         del deps[bad]
+                        changed = True
+                for pinned, good_version in _RUNTIME_DEP_PINS.items():
+                    if pinned in deps and deps[pinned] != good_version:
+                        deps[pinned] = good_version
                         changed = True
             if changed:
                 files[pkg_key] = json.dumps(pkg, indent=2)
