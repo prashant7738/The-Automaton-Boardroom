@@ -326,6 +326,60 @@ def _fix_react_structure(source_files: dict) -> dict:
     # --- Tailwind CSS: inject missing config files if tailwindcss is a dependency ---
     # postcss.config.js and tailwind.config.js are both required for Tailwind to work
     # with Vite. If the LLM omits either, the build succeeds but classes are unstyled.
+    _TAILWIND_DIRECTIVES = "@tailwind base;\n@tailwind components;\n@tailwind utilities;\n"
+
+    def _ensure_tailwind_entry_css(files: dict, prefix: str) -> None:
+        """Ensure a CSS file with @tailwind directives exists and is imported by the
+        app's entry point. Also upgrades the deprecated React 17 `ReactDOM.render`
+        call to the React 18 `createRoot` API when found, since scaffolds that need
+        this fix are almost always also missing the Tailwind entry CSS.
+        """
+        # Reuse an existing src/*.css file that already has the directives, if any.
+        tailwind_css = None
+        for fname, content in files.items():
+            if fname.startswith(f"{prefix}src/") and fname.endswith(".css") and "@tailwind" in content:
+                tailwind_css = fname
+                break
+        if tailwind_css is None:
+            tailwind_css = f"{prefix}src/index.css"
+            if tailwind_css not in files:
+                files[tailwind_css] = _TAILWIND_DIRECTIVES
+            elif "@tailwind" not in files[tailwind_css]:
+                files[tailwind_css] = _TAILWIND_DIRECTIVES + files[tailwind_css]
+
+        entry_candidates = (
+            f"{prefix}src/main.jsx", f"{prefix}src/main.tsx",
+            f"{prefix}src/index.jsx", f"{prefix}src/index.tsx",
+        )
+        entry_file = next((c for c in entry_candidates if c in files), None)
+        if entry_file is None:
+            return
+
+        entry_content = files[entry_file]
+        css_import = f"./{tailwind_css.rsplit('/', 1)[-1]}"
+        if css_import not in entry_content and not re.search(r'''import\s+['"][^'"]+\.css['"]''', entry_content):
+            entry_content = f"import '{css_import}';\n" + entry_content
+
+        # Upgrade removed React 17 API: ReactDOM.render(...) -> createRoot(...).render(...)
+        if "ReactDOM.render(" in entry_content and "createRoot" not in entry_content:
+            if not re.search(r'''from\s+['"]react-dom/client['"]''', entry_content):
+                if re.search(r'''import\s+ReactDOM\s+from\s+['"]react-dom['"];?''', entry_content):
+                    entry_content = re.sub(
+                        r'''import\s+ReactDOM\s+from\s+['"]react-dom['"];?''',
+                        "import { createRoot } from 'react-dom/client';",
+                        entry_content,
+                    )
+                else:
+                    entry_content = "import { createRoot } from 'react-dom/client';\n" + entry_content
+            entry_content = re.sub(
+                r'''ReactDOM\.render\(\s*(.*?),\s*document\.getElementById\((['"])root\2\)\s*\);?''',
+                lambda m: f"createRoot(document.getElementById('root')).render({m.group(1)});",
+                entry_content,
+                flags=re.DOTALL,
+            )
+
+        files[entry_file] = entry_content
+
     _TAILWIND_POSTCSS = (
         "export default {\n"
         "  plugins: { tailwindcss: {}, autoprefixer: {} },\n"
@@ -361,6 +415,32 @@ def _fix_react_structure(source_files: dict) -> dict:
                     changed = True
             if changed:
                 files[pkg_key] = json.dumps(pkg, indent=2)
+            # Config files alone are not enough: without a CSS entry file that
+            # contains the @tailwind directives AND is imported by the app's
+            # entry point, PostCSS has nothing to process and no classes are
+            # ever emitted. Ensure both pieces are wired up.
+            _ensure_tailwind_entry_css(files, prefix)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+
+    # --- Strip invented/non-existent npm packages the LLM sometimes hallucinates ---
+    # shadcn/ui is distributed as copy-paste source, NOT an installable npm package.
+    # If the model adds it as a dependency, `npm install` fails with ETARGET.
+    _INVALID_NPM_DEPS = {"shadcn/ui", "@shadcn/ui", "shadcn-ui", "shadcn"}
+    for pkg_key in ("package.json", "frontend/package.json"):
+        if pkg_key not in files:
+            continue
+        try:
+            pkg = json.loads(files[pkg_key])
+            changed = False
+            for dep_section in ("dependencies", "devDependencies"):
+                deps = pkg.get(dep_section, {})
+                for bad in list(deps.keys()):
+                    if bad in _INVALID_NPM_DEPS:
+                        del deps[bad]
+                        changed = True
+            if changed:
+                files[pkg_key] = json.dumps(pkg, indent=2)
         except (json.JSONDecodeError, AttributeError):
             pass
 
@@ -373,11 +453,28 @@ def _fix_react_structure(source_files: dict) -> dict:
 
 _FRONTEND_SKILL = """
 FRONTEND DESIGN SKILL — apply these rules when generating any React / Vite UI:
-- Use Tailwind CSS utility classes for ALL styling. No CSS files, no inline style props.
+- Use Tailwind CSS utility classes for ALL styling. No custom CSS rules, no inline style props.
   Add "tailwindcss", "postcss", and "autoprefixer" to devDependencies.
-- Build UI from these shadcn/ui primitives when appropriate: Button, Card, CardHeader,
-  CardContent, Input, Label, Badge, Separator, Skeleton, Tabs, Dialog, Tooltip.
-  Import from "@/components/ui/<name>" (configure the "@" alias in vite.config.js).
+- CRITICAL: Tailwind does NOT work without a CSS entry file. You MUST create "src/index.css"
+  (or "frontend/src/index.css" for full-stack) containing EXACTLY these three lines:
+    @tailwind base;
+    @tailwind components;
+    @tailwind utilities;
+  and import it as the very first line of "src/main.jsx": import './index.css';
+  Skipping this import means every Tailwind class renders completely unstyled.
+- Use the React 18 API in main.jsx: import { createRoot } from 'react-dom/client'; then
+  createRoot(document.getElementById('root')).render(<App />). NEVER use the removed
+  ReactDOM.render(...) API.
+- Build UI from shadcn/ui-style primitives (Button, Card, CardHeader, CardContent, Input,
+  Label, Badge, Separator, Skeleton, Tabs, Dialog, Tooltip) when appropriate.
+  CRITICAL: shadcn/ui is NOT an installable npm package — it has no "shadcn/ui" or
+  "@shadcn/ui" entry on the npm registry. NEVER add it to package.json dependencies
+  (this causes an ETARGET install failure). Instead, GENERATE the component source
+  files yourself directly under "src/components/ui/<name>.jsx" using Tailwind classes,
+  and import them locally as "@/components/ui/<name>" (configure the "@" alias in
+  vite.config.js). If you need unstyled behavior primitives (dialogs, tooltips), use
+  the real "@radix-ui/react-*" packages plus "class-variance-authority", "clsx", and
+  "tailwind-merge" as actual dependencies — never invent package names.
 - Layout: prefer CSS Grid for page structure, Flexbox for component-level alignment.
   Make every layout mobile-first and responsive (sm: / md: / lg: breakpoints).
 - Color palette: choose a coherent theme (e.g. slate + indigo accent) and extend it
