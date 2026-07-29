@@ -406,12 +406,27 @@ def _fix_react_structure(source_files: dict) -> dict:
                 files[f"{prefix}postcss.config.js"] = _TAILWIND_POSTCSS
             if f"{prefix}tailwind.config.js" not in files:
                 files[f"{prefix}tailwind.config.js"] = _TAILWIND_CONFIG
-            # Ensure postcss and autoprefixer are listed as devDependencies
+            # Pin tailwindcss / postcss / autoprefixer to known-good versions.
+            # The LLM often hallucinates versions that don't exist on npm
+            # (e.g. autoprefixer@^11.0.0 — real latest is 10.x), which makes
+            # `npm install` fail with ETARGET. The tailwind/postcss config
+            # files we emit above use v3 syntax, so pin to matching majors.
+            _TAILWIND_PINS = {
+                "tailwindcss": "^3.4.0",
+                "postcss": "^8.4.0",
+                "autoprefixer": "^10.4.0",
+            }
+            deps = pkg.setdefault("dependencies", {})
             dev = pkg.setdefault("devDependencies", {})
             changed = False
-            for pkg_name in ("postcss", "autoprefixer"):
-                if pkg_name not in all_deps:
-                    dev[pkg_name] = "latest"
+            for pkg_name, good_version in _TAILWIND_PINS.items():
+                # Move to devDependencies if it was placed in dependencies,
+                # and always overwrite the version with a known-good one.
+                if pkg_name in deps:
+                    del deps[pkg_name]
+                    changed = True
+                if dev.get(pkg_name) != good_version:
+                    dev[pkg_name] = good_version
                     changed = True
             if changed:
                 files[pkg_key] = json.dumps(pkg, indent=2)
