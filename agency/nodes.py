@@ -763,22 +763,55 @@ def developer_node(state: AgencyState) -> Dict:
     }
 
 
-@traceable
-def tester_node(state: AgencyState) -> Dict:
-    source_files = _normalize_source_files(state['source_code'])
+def _detect_project_type(source_files: dict) -> dict:
+    """Inspect the file tree/content and classify the project stack.
 
-    # Detect project type from file tree and source content
+    Returns a dict with the possibly-adjusted `source_files` plus boolean
+    flags for each supported stack (fastapi, django, react, fullstack).
+    """
     all_source = " ".join(source_files.values()).lower()
-    has_package_json  = "package.json" in source_files or "frontend/package.json" in source_files
-    has_manage_py     = "manage.py" in source_files
+    has_package_json = "package.json" in source_files or "frontend/package.json" in source_files
+    has_manage_py = "manage.py" in source_files
     is_fastapi = "fastapi" in all_source and not has_manage_py
-    is_django  = has_manage_py or ("django" in all_source and not has_package_json)
-    is_react   = has_package_json
+    is_django = has_manage_py or ("django" in all_source and not has_package_json)
+    is_react = has_package_json
     # Full-stack: dedicated frontend/ and backend/ subdirectories present together
     is_fullstack = (
         any(k.startswith("frontend/") for k in source_files)
         and any(k.startswith("backend/") for k in source_files)
     )
+
+    # If this is a frontend-only React project whose files were nested under a
+    # "frontend/" directory (but there's no matching "backend/", so it's not
+    # actually full-stack), flatten that prefix. _run_react() assumes package.json
+    # and friends live at the sandbox root; leaving the "frontend/" prefix in
+    # place causes `npm install` to run in the wrong directory and fail with
+    # ENOENT looking for /home/user/package.json.
+    if is_react and not is_fullstack and "package.json" not in source_files:
+        source_files = {
+            (k[len("frontend/"):] if k.startswith("frontend/") else k): v
+            for k, v in source_files.items()
+        }
+
+    return {
+        "source_files": source_files,
+        "is_fastapi": is_fastapi,
+        "is_django": is_django,
+        "is_react": is_react,
+        "is_fullstack": is_fullstack,
+    }
+
+
+@traceable
+def tester_node(state: AgencyState) -> Dict:
+    source_files = _normalize_source_files(state['source_code'])
+
+    detected = _detect_project_type(source_files)
+    source_files = detected["source_files"]
+    is_fastapi = detected["is_fastapi"]
+    is_django = detected["is_django"]
+    is_react = detected["is_react"]
+    is_fullstack = detected["is_fullstack"]
 
     with Sandbox.create() as sandbox:
         # Write full project tree into sandbox
