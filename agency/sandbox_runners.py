@@ -90,7 +90,8 @@ def _run_fastapi(sandbox, source_files: dict) -> str:
     server_log = sandbox.commands.run("cat /tmp/server.log 2>&1", timeout=5)
     logs.append(f"[server log]\n{(server_log.stdout or '')[-2000:]}")
 
-    sandbox.commands.run("pkill -f 'uvicorn' 2>/dev/null || true", timeout=5)
+    # bracket trick avoids pkill matching its own invoking shell's argv
+    sandbox.commands.run("pkill -f '[u]vicorn' 2>/dev/null || true", timeout=5)
     return "\n".join(logs)
 
 
@@ -124,7 +125,7 @@ def _run_django(sandbox, source_files: dict) -> str:
     server_log = sandbox.commands.run("cat /tmp/server.log 2>&1", timeout=5)
     logs.append(f"[server log]\n{(server_log.stdout or '')[-2000:]}")
 
-    sandbox.commands.run("pkill -f 'manage.py runserver' 2>/dev/null || true", timeout=5)
+    sandbox.commands.run("pkill -f '[m]anage.py runserver' 2>/dev/null || true", timeout=5)
     return "\n".join(logs)
 
 
@@ -209,7 +210,7 @@ def _run_react(sandbox, source_files: dict) -> str:
     logs.append(f"[serve log]\n{(serve_log.stdout or '')[-1000:]}")
 
     try:
-        sandbox.commands.run("pkill -f 'npx serve'", timeout=5)
+        sandbox.commands.run("pkill -f '[n]px serve' 2>/dev/null || true", timeout=5)
     except Exception:
         pass  # process may have already exited; ignore
     return "\n".join(logs)
@@ -296,8 +297,8 @@ def _run_fullstack(sandbox, source_files: dict) -> str:
     logs.append(f"[serve log]\n{(serve_log.stdout or '')[-1000:]}")
 
     try:
-        sandbox.commands.run("pkill -f 'uvicorn' 2>/dev/null || true", timeout=5)
-        sandbox.commands.run("pkill -f 'npx serve' 2>/dev/null || true", timeout=5)
+        sandbox.commands.run("pkill -f '[u]vicorn' 2>/dev/null || true", timeout=5)
+        sandbox.commands.run("pkill -f '[n]px serve' 2>/dev/null || true", timeout=5)
     except Exception:
         pass
     return "\n".join(logs)
