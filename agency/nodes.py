@@ -380,14 +380,18 @@ def _fix_react_structure(source_files: dict) -> dict:
 
         files[entry_file] = entry_content
 
+    # CommonJS syntax (module.exports), NOT `export default`: package.json here
+    # never sets "type": "module", so Node loads these .js files as CJS. PostCSS's
+    # config loader (unlike Vite's, which transpiles vite.config.js) requires the
+    # file directly, so ESM syntax throws "SyntaxError: Unexpected token 'export'".
     _TAILWIND_POSTCSS = (
-        "export default {\n"
+        "module.exports = {\n"
         "  plugins: { tailwindcss: {}, autoprefixer: {} },\n"
         "};\n"
     )
     _TAILWIND_CONFIG = (
         "/** @type {import('tailwindcss').Config} */\n"
-        "export default {\n"
+        "module.exports = {\n"
         "  content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],\n"
         "  theme: { extend: {} },\n"
         "  plugins: [],\n"
@@ -406,6 +410,16 @@ def _fix_react_structure(source_files: dict) -> dict:
                 files[f"{prefix}postcss.config.js"] = _TAILWIND_POSTCSS
             if f"{prefix}tailwind.config.js" not in files:
                 files[f"{prefix}tailwind.config.js"] = _TAILWIND_CONFIG
+            # The LLM sometimes writes these two config files itself using
+            # `export default` ESM syntax. Since package.json never sets
+            # "type": "module", Node loads .js as CJS and throws
+            # "SyntaxError: Unexpected token 'export'" at build time.
+            for cfg_key in (f"{prefix}postcss.config.js", f"{prefix}tailwind.config.js"):
+                cfg_content = files.get(cfg_key, "")
+                if re.search(r'^\s*export\s+default\b', cfg_content, re.MULTILINE):
+                    files[cfg_key] = re.sub(
+                        r'^(\s*)export\s+default\b', r'\1module.exports =', cfg_content, count=1, flags=re.MULTILINE,
+                    )
             # Pin tailwindcss / postcss / autoprefixer to known-good versions.
             # The LLM often hallucinates versions that don't exist on npm
             # (e.g. autoprefixer@^11.0.0 — real latest is 10.x), which makes
@@ -615,6 +629,7 @@ def developer_node(state: AgencyState) -> Dict:
     - CRITICAL for React/Vite: Any file containing JSX syntax MUST use the .jsx (or .tsx) extension. Files named .js that contain JSX will cause a Vite parse error.
     - CRITICAL for React/Vite: "package.json" devDependencies MUST always include "vite" and "@vitejs/plugin-react". Missing these causes "sh: vite: not found" at build time. Example devDependencies: {{"vite": "^5.0.0", "@vitejs/plugin-react": "^4.0.0"}}.
     - CRITICAL for React/Vite: "vite.config.js" MUST always include @vitejs/plugin-react plugin AND the defineConfig import. Example: import {{ defineConfig }} from 'vite'; import react from '@vitejs/plugin-react'; export default defineConfig({{ plugins: [react()] }}).
+    - CRITICAL: "postcss.config.js" and "tailwind.config.js" MUST use CommonJS syntax (module.exports = {{...}}), NEVER `export default`. package.json never sets "type": "module", so Node loads these two files as CommonJS and `export default` causes "SyntaxError: Unexpected token 'export'" at build time. ("vite.config.js" is exempt — Vite transpiles it itself, so `export default` is correct there.)
     - Example for Full-Stack (FastAPI + React/Vite): {{"backend/main.py": "...", "backend/requirements.txt": "fastapi\nuvicorn\npython-multipart", "frontend/package.json": "...", "frontend/vite.config.js": "...", "frontend/index.html": "...", "frontend/src/main.jsx": "...", "frontend/src/App.jsx": "...", "backend/Dockerfile": "...", "frontend/Dockerfile": "...", "docker-compose.yml": "...", ".dockerignore": "...", ".env.example": "..."}}
     - CRITICAL for Full-Stack: Place ALL backend files under "backend/" and ALL frontend files under "frontend/". Do NOT mix them at the project root.
     - CRITICAL for Full-Stack: The FastAPI backend MUST include CORS middleware so the React frontend can call it. Add: from fastapi.middleware.cors import CORSMiddleware and app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]).
