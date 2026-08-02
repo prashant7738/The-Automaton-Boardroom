@@ -488,6 +488,100 @@ def _fix_react_structure(source_files: dict) -> dict:
         except (json.JSONDecodeError, AttributeError):
             pass
 
+    # --- Docker Compose safety net: backfill Dockerfiles it references ---
+    # If docker-compose.yml builds a service from a directory (or ".") but the
+    # LLM forgot to emit the matching Dockerfile, `docker compose build` fails
+    # with "no such file or directory". Inject a standard one deterministically
+    # rather than relying solely on the prompt instructions.
+    _BACKEND_DOCKERFILE_TMPL = (
+        "FROM python:3.11-slim\n"
+        "WORKDIR /app\n"
+        "COPY requirements.txt ./\n"
+        "RUN pip install --no-cache-dir -r requirements.txt\n"
+        "COPY . .\n"
+        "EXPOSE 8000\n"
+        'CMD ["uvicorn", "{entry_module}:{app_var}", "--host", "0.0.0.0", "--port", "8000"]\n'
+    )
+    _FRONTEND_DOCKERFILE_TMPL = (
+        "FROM node:20-alpine AS builder\n"
+        "WORKDIR /app\n"
+        "COPY package*.json ./\n"
+        "RUN npm install\n"
+        "COPY . .\n"
+        "RUN npm run build\n"
+        "FROM node:20-alpine\n"
+        "RUN npm install -g serve\n"
+        "WORKDIR /app\n"
+        "COPY --from=builder /app/dist ./dist\n"
+        "EXPOSE 3000\n"
+        'CMD ["serve", "-s", "dist", "-l", "3000"]\n'
+    )
+
+    def _fastapi_entry(prefix: str) -> tuple:
+        entry_module, app_var = "main", "app"
+        for fname, content in files.items():
+            if fname.startswith(prefix) and fname.endswith(".py") and "FastAPI(" in content:
+                entry_module = fname[len(prefix):-3].replace("/", ".")
+                m = re.search(r'(\w+)\s*=\s*FastAPI\(', content)
+                if m:
+                    app_var = m.group(1)
+                break
+        return entry_module, app_var
+
+    compose = files.get("docker-compose.yml", "")
+    if compose:
+        if re.search(r'(context:\s*|build:\s*)\.?/?backend\b', compose) and "backend/Dockerfile" not in files:
+            entry_module, app_var = _fastapi_entry("backend/")
+            files["backend/Dockerfile"] = _BACKEND_DOCKERFILE_TMPL.format(
+                entry_module=entry_module, app_var=app_var
+            )
+
+        if re.search(r'(context:\s*|build:\s*)\.?/?frontend\b', compose) and "frontend/Dockerfile" not in files:
+            files["frontend/Dockerfile"] = _FRONTEND_DOCKERFILE_TMPL
+
+        # Single-service compose ("build: .") referencing the root Dockerfile.
+        is_fullstack_layout = any(k.startswith("frontend/") for k in files) and any(
+            k.startswith("backend/") for k in files
+        )
+        if (
+            not is_fullstack_layout
+            and re.search(r'build:\s*\.\s*($|\n)', compose)
+            and "Dockerfile" not in files
+        ):
+            has_package_json = "package.json" in files
+            has_fastapi = any(
+                fname.endswith(".py") and "FastAPI(" in content for fname, content in files.items()
+            )
+            has_streamlit = any(
+                fname.endswith(".py") and "streamlit" in content.lower() for fname, content in files.items()
+            )
+            if has_package_json:
+                files["Dockerfile"] = _FRONTEND_DOCKERFILE_TMPL
+            elif has_streamlit:
+                files["Dockerfile"] = (
+                    "FROM python:3.11-slim\n"
+                    "WORKDIR /app\n"
+                    "COPY requirements.txt ./\n"
+                    "RUN pip install --no-cache-dir -r requirements.txt\n"
+                    "COPY . .\n"
+                    "EXPOSE 8501\n"
+                    'CMD ["streamlit", "run", "app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]\n'
+                )
+            elif has_fastapi:
+                entry_module, app_var = _fastapi_entry("")
+                files["Dockerfile"] = _BACKEND_DOCKERFILE_TMPL.format(
+                    entry_module=entry_module, app_var=app_var
+                )
+            else:
+                files["Dockerfile"] = (
+                    "FROM python:3.11-slim\n"
+                    "WORKDIR /app\n"
+                    "COPY requirements.txt* ./\n"
+                    "RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || true\n"
+                    "COPY . .\n"
+                    'CMD ["python", "main.py"]\n'
+                )
+
     return files
 
 
