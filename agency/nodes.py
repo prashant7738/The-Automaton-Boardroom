@@ -33,7 +33,7 @@ from langsmith import traceable
 def model(prompt, temperature=0.3):
     try:
         llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model="qwen/qwen3-32b",
             temperature=temperature,
             api_key=os.getenv('GROQ_API_KEY')
         )
