@@ -8,6 +8,6 @@ class AgencyState(TypedDict):
     iterations : int            #count to prevent infinite loop
     approved_by_human : bool    #Human in the loop (flag)
     human_feedback : str        #Feedback from human reviewer
-    required_inputs : List[Dict]# LLM-identified inputs: [{name, type, description}, ...]
-    user_inputs : Dict[str, str]# User-provided values: {"num1": "5", "num2": "3"}
+    design_questions : List[Dict]# LLM-identified MCQ decisions: [{id, question, options}, ...]
+    design_answers : Dict[str, str]# User-selected answers: {"q1": "chosen option text"}
 

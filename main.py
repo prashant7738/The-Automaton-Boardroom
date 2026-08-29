@@ -18,8 +18,8 @@ def main():
         "iterations": 0,
         "approved_by_human": False,
         "human_feedback": "",
-        "required_inputs": [],
-        "user_inputs": {},
+        "design_questions": [],
+        "design_answers": {},
     }
 
     # Each run needs a unique thread_id so the checkpointer can save/resume state
@@ -45,15 +45,25 @@ def main():
             if hasattr(task, 'interrupts') and task.interrupts:
                 interrupt_payload = task.interrupts[0].value
 
-                if interrupt_payload.get("type") == "input_request":
-                    # --- Input collection phase ---
+                if interrupt_payload.get("type") == "design_questions":
+                    # --- Design decision phase (MCQ) ---
                     print("\n" + "="*60)
-                    print("INPUT REQUIRED")
+                    print("DESIGN DECISIONS NEEDED")
                     print("="*60)
                     answers = {}
-                    for inp in interrupt_payload["inputs"]:
-                        val = input(f"{inp['description']} ({inp['type']}): ").strip()
-                        answers[inp["name"]] = val
+                    for q in interrupt_payload["questions"]:
+                        print(f"\n{q['question']}")
+                        options = q["options"]
+                        for i, opt in enumerate(options, start=1):
+                            print(f"  {i}) {opt}")
+                        choice = None
+                        while choice is None:
+                            raw = input(f"Choose 1-{len(options)}: ").strip()
+                            if raw.isdigit() and 1 <= int(raw) <= len(options):
+                                choice = int(raw)
+                            else:
+                                print("Invalid choice, try again.")
+                        answers[q["id"]] = options[choice - 1]
                     result = app.invoke(Command(resume=answers), config)
 
                 else:

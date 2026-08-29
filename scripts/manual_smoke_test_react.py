@@ -60,8 +60,8 @@ state = {
     "iterations": 1,
     "approved_by_human": False,
     "human_feedback": "",
-    "required_inputs": [],
-    "user_inputs": {},
+    "design_questions": [],
+    "design_answers": {},
 }
 
 print("Running tester_node...")

@@ -35,7 +35,7 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 - Backend guidance emphasizes FastAPI structure, validation, structured errors, async handlers, and environment-based secrets.
 
 **LLM & Node Robustness**
-- All agent nodes (`pm_node`, `input_collector_node`, `developer_node`) now wrap `model()` calls in `try/except RuntimeError` — an LLM outage no longer crashes the entire pipeline.
+- All agent nodes (`pm_node`, `design_questions_node`, `developer_node`) now wrap `model()` calls in `try/except RuntimeError` — an LLM outage no longer crashes the entire pipeline.
 - JSON extraction in `developer_node` now uses `json.JSONDecoder().raw_decode()` instead of a greedy `re.search(r'\{.*\}')` regex, so embedded JSON objects with trailing text are parsed correctly.
 - Prompt now explicitly permits a ` ```json ``` ` fence (which is stripped automatically) instead of saying "No markdown fences" while the code secretly strips them.
 
@@ -335,7 +335,7 @@ automaton-boardroom/
 │   ├── __init__.py
 │   ├── test_sanitize.py
 │   ├── test_router.py
-│   └── test_input_collector.py
+│   └── test_design_questions.py
 ├── scripts/                     # Manual/integration smoke-test scripts
 │   └── manual_smoke_test_react.py
 ├── app.py                      # Streamlit entry point

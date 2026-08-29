@@ -20,7 +20,7 @@ st.set_page_config(
 
 # ─── Session State Defaults ────────────────────────────────────────────────────
 _DEFAULTS = {
-    "phase": "idle",       # idle | running | input_request | human_review | done | error
+    "phase": "idle",       # idle | running | design_questions | human_review | done | error
     "thread_id": None,
     "future": None,
     "executor": None,
@@ -102,7 +102,7 @@ with st.sidebar:
     # Pipeline stage indicator
     stages = [
         ("📋 PM Agent", "Spec"),
-        ("🔍 Input Collector", "Inputs"),
+        ("🧭 Design Questions", "Design"),
         ("💻 Developer", "Code"),
         ("🧪 Tester", "Test"),
         ("👤 Human Review", "Review"),
@@ -111,7 +111,7 @@ with st.sidebar:
     phase_to_stage = {
         "idle": -1,
         "running": 2,
-        "input_request": 1,
+        "design_questions": 1,
         "human_review": 4,
         "done": 5,
         "error": -1,
@@ -201,8 +201,8 @@ if st.session_state.phase == "idle":
             "iterations": 0,
             "approved_by_human": False,
             "human_feedback": "",
-            "required_inputs": [],
-            "user_inputs": {},
+            "design_questions": [],
+            "design_answers": {},
         }
 
         _log(f"Workflow started: {idea.strip()[:80]}")
@@ -245,9 +245,9 @@ elif st.session_state.phase == "running":
             st.rerun()
         elif payload is not None:
             st.session_state.interrupt_payload = payload
-            if payload.get("type") == "input_request":
-                _log("Agents need user input values.")
-                st.session_state.phase = "input_request"
+            if payload.get("type") == "design_questions":
+                _log("Agents need design decisions.")
+                st.session_state.phase = "design_questions"
             else:
                 _log("Human review requested.")
                 st.session_state.phase = "human_review"
@@ -263,7 +263,7 @@ elif st.session_state.phase == "running":
         # Still running — show progress and auto-refresh
         progress_msgs = [
             "📋 PM Agent is analyzing your idea and writing the specification…",
-            "🔍 Input Collector is identifying required parameters…",
+            "🧭 Design reviewer is drafting key build decisions…",
             "💻 Developer Agent is generating code files…",
             "🧪 Tester Agent is spinning up an E2B sandbox…",
             "🔄 Running code and capturing output…",
@@ -284,47 +284,38 @@ elif st.session_state.phase == "running":
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PHASE: INPUT REQUEST
+# PHASE: DESIGN QUESTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
-elif st.session_state.phase == "input_request":
-    st.title("📝 Input Required")
+elif st.session_state.phase == "design_questions":
+    st.title("🧭 Design Decisions")
     st.markdown(
-        "The agents identified that your program needs runtime values. "
-        "Please fill in the fields below so they can be baked into the generated code."
+        "The agents found a few build decisions that meaningfully affect the app. "
+        "Pick an option for each — your choices will be baked into the spec."
     )
     st.divider()
 
     payload = st.session_state.interrupt_payload or {}
-    required_inputs = payload.get("inputs", [])
+    design_questions = payload.get("questions", [])
 
-    if not required_inputs:
-        # Nothing to collect — resume with empty dict
-        _log("No inputs required — resuming.")
+    if not design_questions:
+        # Nothing to decide — resume with empty dict
+        _log("No design decisions required — resuming.")
         _submit_bg(_run_resume, Command(resume={}), _cfg())
         st.session_state.phase = "running"
         st.rerun()
 
-    with st.form("input_form"):
+    with st.form("design_questions_form"):
         answers = {}
-        for inp in required_inputs:
-            name = inp.get("name", "value")
-            dtype = inp.get("type", "str")
-            desc = inp.get("description", name)
-
-            if dtype == "int":
-                val = st.number_input(desc, step=1, format="%d", key=f"inp_{name}")
-                answers[name] = str(int(val))
-            elif dtype == "float":
-                val = st.number_input(desc, format="%f", key=f"inp_{name}")
-                answers[name] = str(val)
-            else:
-                val = st.text_input(desc, key=f"inp_{name}", max_chars=500)
-                answers[name] = val[:500]
+        for q in design_questions:
+            qid = q.get("id", "q")
+            question = q.get("question", qid)
+            options = q.get("options", [])
+            answers[qid] = st.radio(question, options, key=f"dq_{qid}")
 
         submitted = st.form_submit_button("▶ Submit & Continue", type="primary", use_container_width=True)
 
     if submitted:
-        _log(f"User inputs collected: {list(answers.keys())}")
+        _log(f"Design decisions collected: {list(answers.keys())}")
         _submit_bg(_run_resume, Command(resume=answers), _cfg())
         st.session_state.phase = "running"
         st.rerun()

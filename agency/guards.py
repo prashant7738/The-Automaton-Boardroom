@@ -5,10 +5,10 @@ content as untrusted:
 
 1. Prompt-injection detection/sanitization for text a human typed in
    (`_sanitize`) before it is interpolated into any LLM prompt.
-2. Validation of JSON that an LLM handed *back* to us (`validate_required_inputs`)
-   before we act on it (e.g. surfacing it to the user or using it as a variable
-   name), since a compromised or hallucinating model is also an untrusted input
-   source.
+2. Validation of JSON that an LLM handed *back* to us (`validate_design_questions`)
+   before we act on it (e.g. surfacing it to the user as a multiple-choice
+   question), since a compromised or hallucinating model is also an untrusted
+   input source.
 """
 import re
 from typing import Any, Dict, List
@@ -46,30 +46,39 @@ def _sanitize(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Untrusted LLM-output validation
 # ---------------------------------------------------------------------------
-_ALLOWED_INPUT_TYPES = {"int", "float", "str"}
 _SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+_MAX_DESIGN_QUESTIONS = 5
+_MIN_OPTIONS = 2
+_MAX_OPTIONS = 6
 
 
-def validate_required_inputs(parsed: Any) -> List[Dict]:
-    """Filter a parsed LLM "required inputs" JSON array down to well-formed entries.
+def validate_design_questions(parsed: Any) -> List[Dict]:
+    """Filter a parsed LLM "design questions" JSON array down to well-formed entries.
 
-    Each valid entry must be a dict with a safe Python-identifier `name`,
-    a `type` in {int, float, str}, and a string `description`. Anything else
-    is skipped (and logged) rather than trusted downstream, since this data
-    ultimately becomes a variable name written into generated code.
+    Each valid entry must be a dict with a safe Python-identifier `id`, a
+    non-empty string `question`, and an `options` list of 2-6 non-empty
+    strings. Anything else is skipped (and logged) rather than trusted
+    downstream, since this data is rendered directly as a UI form. The
+    result is capped at 5 questions to avoid overwhelming the user.
     """
-    required_inputs: List[Dict] = []
+    design_questions: List[Dict] = []
     if not isinstance(parsed, list):
-        return required_inputs
+        return design_questions
     for item in parsed:
+        options = item.get("options") if isinstance(item, dict) else None
         if (
             isinstance(item, dict)
-            and isinstance(item.get("name"), str)
-            and item.get("type") in _ALLOWED_INPUT_TYPES
-            and isinstance(item.get("description"), str)
-            and _SAFE_IDENTIFIER_RE.match(item["name"])
+            and isinstance(item.get("id"), str)
+            and _SAFE_IDENTIFIER_RE.match(item["id"])
+            and isinstance(item.get("question"), str)
+            and item["question"].strip()
+            and isinstance(options, list)
+            and _MIN_OPTIONS <= len(options) <= _MAX_OPTIONS
+            and all(isinstance(o, str) and o.strip() for o in options)
         ):
-            required_inputs.append(item)
+            design_questions.append(item)
         else:
-            print(f"[guards] Skipping malformed input entry: {item}")
-    return required_inputs
+            print(f"[guards] Skipping malformed design question entry: {item}")
+        if len(design_questions) >= _MAX_DESIGN_QUESTIONS:
+            break
+    return design_questions[:_MAX_DESIGN_QUESTIONS]
