@@ -10,7 +10,8 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 
 ## ✨ Key Features
 
-- ✅ **Full Development Lifecycle**: Spec → Code → Test → Self-Correct → Human Review → Delivery
+- ✅ **Full Development Lifecycle**: Spec → Design Decisions → Code → Test → Self-Correct → Human Review → Delivery
+- ✅ **Build-Decision MCQ Gating**: Asks up to 5 single-choice MCQ questions about impactful scope/feature/design decisions before coding
 - ✅ **Self-Healing AI**: Automatically detects and fixes bugs through iterative testing
 - ✅ **Isolated Execution**: Secure E2B sandbox prevents malicious code execution
 - ✅ **Prompt-Safety Guardrails**: User inputs are wrapped, scanned for injection, and length-capped before reaching any LLM
@@ -52,6 +53,17 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 - `_get_graph_interrupt()` access to `task.interrupts[0]` is now guarded with `try/except IndexError` to handle the race condition where a background thread consumes the interrupt between the truthiness check and the index access.
 - All user-facing text inputs now enforce maximum character limits (`app_idea`: 2 000; runtime inputs: 500; rejection reason: 500) to prevent oversized payloads from reaching generated files.
 
+**Build-Decision MCQ Phase (August 2026)**
+- Replaced the old `input_collector_node` that asked users for *example runtime values* (e.g., "Enter first number") purely to seed test data.
+- New `design_questions_node` runs after the PM writes the spec and asks up to **5 single-choice MCQ questions** about decisions that materially affect the build:
+  - Feature scope (e.g., "Should include authentication?")
+  - Design trade-offs (e.g., "Monolithic or microservices?")
+  - Technology/architecture choices (e.g., "Which UI framework?")
+- User selects options via radio buttons (Streamlit) or numbered choices (CLI) — never free-text input.
+- MCQ answers are folded into the Developer prompt as design constraints to honor.
+- Developer now always self-generates reasonable runtime defaults for tests; users no longer provide example data.
+- Validation caps question list at 5; truncates malformed entries; rejects questions with <2 or >6 options; safe-identifier checking on question IDs.
+
 **Previous Updates**
 - Added safer LLM prompt handling so user ideas, specifications, logs, and runtime inputs are treated as data instead of instructions.
 - Improved model fallback behavior so Groq failures now fall back cleanly to Gemini, and both-provider failures are reported clearly.
@@ -76,8 +88,14 @@ This platform leverages LangGraph's state machine to handle complex cyclic depen
                        │
                        ▼
           ┌──────────────────────────────┐
+          │   🧭 Design Questions Node   │ ◄─── Ask MCQ Build Decisions
+          │    (Single-Choice MCQ)        │      Scope, Features, Design
+          └────────────┬──────────────────┘
+                       │
+                       ▼
     ┌────►│   💻 Dev Agent               │ ◄─── Write Code Files
-    │     │    (Implementation)           │      Handle Errors
+    │     │    (Implementation)           │      Honor Design Choices
+    │     │    (Self-Generate Defaults)   │
     │     └────────────┬──────────────────┘
     │                  │
     │                  ▼
@@ -101,14 +119,15 @@ This platform leverages LangGraph's state machine to handle complex cyclic depen
                     └──────────────────────────────┘
 ```
 
-### 🤖 The Four Specialized Agents
+### 🤖 The Five Specialized Agents
 
 | Agent | Role | Responsibilities |
 |-------|------|------------------|
-| **PM Agent** | Product Manager | • Analyzes vague requirements • Creates detailed `specifications.md` • Plans file structure & architecture |
-| **Dev Agent** | Developer | • Writes clean, modular code • Implements fixes from test failures • Self-corrects based on feedback |
-| **Tester Agent** | QA/Gatekeeper | • Spins up isolated E2B sandbox • Creates Python virtual environments • Installs dependencies • Captures stdout/stderr • Reports failures |
-| **Human Node** | Stakeholder | • Reviews generated code • Approves or requests changes • Uses LangGraph's `interrupt_before` for explicit sign-off |
+| **PM Agent** | Product Manager | Analyzes vague requirements • Creates detailed `specifications.md` • Plans file structure & architecture |
+| **Design Questions Node** | Design Gatekeeper | Analyzes spec to identify impactful build decisions • Generates up to 5 single-choice MCQ questions • Collects user choices on scope, features, design • Interrupts UI to present radio-button/numbered choices |
+| **Dev Agent** | Developer | Writes clean, modular code • Honors design decisions from MCQ answers • Self-generates reasonable runtime defaults • Implements fixes from test failures • Self-corrects based on feedback |
+| **Tester Agent** | QA/Gatekeeper | Spins up isolated E2B sandbox • Creates Python virtual environments • Installs dependencies • Captures stdout/stderr • Reports failures |
+| **Human Node** | Stakeholder | Reviews generated code • Approves or requests changes • Uses LangGraph's `interrupt_before` for explicit sign-off |
 
 ---
 
@@ -352,9 +371,10 @@ User Input: "Create a Python CLI todo app with add, list, and delete commands. S
 
 System Flow:
 1. PM Agent → Creates spec with CLI design, data schema, error handling
-2. Dev Agent → Writes main.py, todos.json handler, argument parser
-3. Tester Agent → Spins up sandbox, tests add/list/delete functionality
-4. Human Node → Reviews code, approves → Deliverable ready
+2. Design Questions → Asks MCQ: "Support persistent storage?" / "Add priority levels?"
+3. Dev Agent → Writes main.py, todos.json handler, argument parser; honors MCQ choices
+4. Tester Agent → Spins up sandbox, tests add/list/delete functionality
+5. Human Node → Reviews code, approves → Deliverable ready
 ```
 
 ### Example 2: API with Self-Correction
@@ -363,11 +383,12 @@ User Input: "Build a Flask API that fetches weather data from OpenWeatherMap"
 
 System Flow:
 1. PM Agent → Defines endpoints, authentication flow, error handling
-2. Dev Agent → Writes Flask app with API integration
-3. Tester Agent → Tests endpoints, discovers missing env var handling
-4. Dev Agent (Loop) → Automatically fixes missing error handling
-5. Tester Agent → Re-runs tests, all pass ✅
-6. Human Node → Reviews improved code, approves
+2. Design Questions → Asks MCQ: "Include caching?" / "Rate limiting needed?"
+3. Dev Agent → Writes Flask app with API integration; honors MCQ choices
+4. Tester Agent → Tests endpoints, discovers missing env var handling
+5. Dev Agent (Loop) → Automatically fixes missing error handling
+6. Tester Agent → Re-runs tests, all pass ✅
+7. Human Node → Reviews improved code, approves
 ```
 
 ---
