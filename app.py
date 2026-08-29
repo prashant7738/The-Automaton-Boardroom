@@ -130,10 +130,11 @@ with st.sidebar:
 
     if st.session_state.activity_log:
         st.markdown("**Activity Log**")
-        log_container = st.container(height=200)
-        with log_container:
-            for msg in st.session_state.activity_log:
-                st.caption(f"• {msg}")
+        with st.container(border=True):
+            log_container = st.container(height=180)
+            with log_container:
+                for i, msg in enumerate(st.session_state.activity_log, 1):
+                    st.caption(f"{i}. {msg}")
 
     if st.session_state.phase not in ("idle",):
         st.divider()
@@ -154,7 +155,7 @@ if st.session_state.phase == "idle":
     st.divider()
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Agents", "4", help="PM · Developer · Tester · Human Review")
+    c1.metric("Agents", "5", help="PM · Design Questions · Developer · Tester · Human Review")
     c2.metric("LLM", "Groq + Gemini", help="Groq primary, Gemini fallback")
     c3.metric("Execution", "E2B Sandbox", help="Isolated, secure code execution")
     c4.metric("Cost", "$0", help="Free developer tiers only")
@@ -212,10 +213,13 @@ if st.session_state.phase == "idle":
 
     st.divider()
     st.markdown(
-        "**How it works:** The PM Agent turns your idea into a technical spec → "
-        "the Developer writes code → the Tester runs it in an E2B sandbox → "
-        "errors auto-loop back to the Developer (up to 5 times) → "
-        "you review and approve the final output."
+        "**How it works:** "
+        "1) PM writes a technical spec → "
+        "2) Design Questions MCQ narrows scope/features → "
+        "3) Developer writes code honoring those choices → "
+        "4) Tester runs it in E2B sandbox → "
+        "5) Errors auto-loop back to Developer (up to 5 times) → "
+        "6) You review and approve the final output."
     )
 
 
@@ -289,8 +293,8 @@ elif st.session_state.phase == "running":
 elif st.session_state.phase == "design_questions":
     st.title("🧭 Design Decisions")
     st.markdown(
-        "The agents found a few build decisions that meaningfully affect the app. "
-        "Pick an option for each — your choices will be baked into the spec."
+        "Choose options for key build decisions. Your choices will guide the Developer agent.  "
+        "*(All choices are single-select; no free-text input.)*"
     )
     st.divider()
 
@@ -298,7 +302,6 @@ elif st.session_state.phase == "design_questions":
     design_questions = payload.get("questions", [])
 
     if not design_questions:
-        # Nothing to decide — resume with empty dict
         _log("No design decisions required — resuming.")
         _submit_bg(_run_resume, Command(resume={}), _cfg())
         st.session_state.phase = "running"
@@ -306,13 +309,19 @@ elif st.session_state.phase == "design_questions":
 
     with st.form("design_questions_form"):
         answers = {}
-        for q in design_questions:
+        for idx, q in enumerate(design_questions, 1):
             qid = q.get("id", "q")
             question = q.get("question", qid)
             options = q.get("options", [])
-            answers[qid] = st.radio(question, options, key=f"dq_{qid}")
+            st.markdown(f"**Question {idx} of {len(design_questions)}**")
+            answers[qid] = st.radio(question, options, key=f"dq_{qid}", label_visibility="collapsed")
+            st.divider()
 
-        submitted = st.form_submit_button("▶ Submit & Continue", type="primary", use_container_width=True)
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.empty()
+        with col2:
+            submitted = st.form_submit_button("✅ Submit", type="primary", use_container_width=True)
 
     if submitted:
         _log(f"Design decisions collected: {list(answers.keys())}")
@@ -340,7 +349,7 @@ elif st.session_state.phase == "human_review":
     # ── Code viewer ────────────────────────────────────────────────────────────
     source_files = final.get("source_code", {})
     if source_files:
-        st.subheader("📁 Generated Files")
+        st.subheader(f"📁 Generated Files ({len(source_files)})")
         tabs = st.tabs(list(source_files.keys()))
         for tab, (fname, content) in zip(tabs, source_files.items()):
             with tab:
@@ -351,6 +360,9 @@ elif st.session_state.phase == "human_review":
                     "md": "markdown", "html": "html", "css": "css",
                     "toml": "toml", "txt": "text", "yml": "yaml", "yaml": "yaml",
                 }
+                # Show file info
+                file_size = len(content.encode())
+                st.caption(f"📄 {fname} · {file_size:,} bytes")
                 st.code(content, language=lang_map.get(ext, "text"), line_numbers=True)
 
     # ── Test logs ──────────────────────────────────────────────────────────────
@@ -363,10 +375,11 @@ elif st.session_state.phase == "human_review":
                        "SyntaxError", "ModuleNotFoundError", "ImportError")
         )
         if has_error:
-            st.warning("⚠️ Errors were detected in the test output.", icon="⚠️")
+            st.warning("⚠️ Errors were detected — the Developer will auto-correct on revision.", icon="⚠️")
         else:
-            st.success("✅ Tests passed with no detected errors.", icon="✅")
-        st.code(test_logs, language="text")
+            st.success("✅ All tests passed!", icon="✅")
+        with st.expander(f"📋 Full Logs ({len(test_logs):,} chars)", expanded=False):
+            st.code(test_logs, language="text")
 
     st.divider()
 
@@ -383,7 +396,7 @@ elif st.session_state.phase == "human_review":
 
     with col_reject:
         reject_reason = st.text_input(
-            "Rejection reason",
+            "What needs to be fixed? (optional feedback to Developer)",
             placeholder="e.g. The API is missing authentication",
             label_visibility="collapsed",
             max_chars=500,
@@ -437,7 +450,7 @@ elif st.session_state.phase == "done":
 
     # ── Code viewer ────────────────────────────────────────────────────────────
     if source_files:
-        st.subheader("📁 Generated Files")
+        st.subheader(f"📁 Generated Files ({len(source_files)})")
         tabs = st.tabs(list(source_files.keys()))
         for tab, (fname, content) in zip(tabs, source_files.items()):
             with tab:
@@ -448,11 +461,14 @@ elif st.session_state.phase == "done":
                     "md": "markdown", "html": "html", "css": "css",
                     "toml": "toml", "txt": "text", "yml": "yaml", "yaml": "yaml",
                 }
+                # Show file info
+                file_size = len(content.encode())
+                st.caption(f"📄 {fname} · {file_size:,} bytes")
                 st.code(content, language=lang_map.get(ext, "text"), line_numbers=True)
 
     # ── Test logs ──────────────────────────────────────────────────────────────
     if test_logs:
-        with st.expander("🧪 Test Logs"):
+        with st.expander(f"🧪 Test Logs ({len(test_logs):,} chars)", expanded=False):
             st.code(test_logs, language="text")
 
     st.divider()
