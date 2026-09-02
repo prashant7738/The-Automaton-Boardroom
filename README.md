@@ -15,9 +15,9 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 - ✅ **Self-Healing AI**: Automatically detects and fixes bugs through iterative testing
 - ✅ **Isolated Execution**: Secure E2B sandbox prevents malicious code execution
 - ✅ **Prompt-Safety Guardrails**: User inputs are wrapped, scanned for injection, and length-capped before reaching any LLM
-- ✅ **LLM Provider Resilience**: Groq is tried first; Gemini is used as fallback; clear errors when both fail — no silent crashes
+- ✅ **Gemini-Powered Generation**: Uses Google Gemini for specifications, design questions, code generation, and self-correction
 - ✅ **Human-in-the-Loop**: Pause and approve before final deployment
-- ✅ **Zero Dependencies Cost**: Uses only free-tier APIs (Groq, Google Gemini, E2B, LangSmith)
+- ✅ **Zero Dependencies Cost**: Uses only free-tier APIs (Google Gemini, E2B, LangSmith)
 - ✅ **Full Observability**: LangSmith tracing for debugging and performance monitoring
 - ✅ **Streamlit UI**: Beautiful, interactive web interface for non-technical users
 - ✅ **Stack-Aware Prompt Skills**: Injects frontend, backend, or plain-Python guidance into the developer prompt so generated code better matches the requested stack
@@ -66,7 +66,7 @@ Instead of generating static, unverified code chunks, **The Automaton Boardroom*
 
 **Previous Updates**
 - Added safer LLM prompt handling so user ideas, specifications, logs, and runtime inputs are treated as data instead of instructions.
-- Improved model fallback behavior so Groq failures now fall back cleanly to Gemini, and both-provider failures are reported clearly.
+- Replaced the previous provider fallback chain with the direct Google GenAI interactions API using Gemini 3.7 Flash.
 - Updated React/Vite generation and sandbox install behavior so generated apps install `vite` and `@vitejs/plugin-react` reliably before build.
 
 ---
@@ -138,7 +138,7 @@ Built entirely on free developer tiers—no credit card required.
 | Component | Technology | Free Tier | Purpose |
 |-----------|-----------|-----------|---------|
 | **Orchestration** | LangGraph + LangChain Core | Open-source | State machine workflow, routing, conditional logic |
-| **LLM Brain** | Google Gemini 2.5 Flash | 1,500 req/day | Code generation, analysis, and error fixing |
+| **LLM Brain** | Google Gemini 3.7 Flash | Google AI plan | Code generation, analysis, and error fixing |
 | **Code Execution** | E2B Sandbox | 100 hrs/month | Isolated, secure code execution environment |
 | **Observability** | LangSmith | 5,000 traces/month | Debugging, performance monitoring, tracing |
 | **Frontend UI** | Streamlit | Free | Interactive web interface, real-time updates |
@@ -181,7 +181,7 @@ All dependencies are managed with `uv` and specified in `pyproject.toml`:
 |---------|---------|---------|
 | `langgraph` | ^0.1.0 | State machine orchestration & workflow |
 | `langchain` | ^0.2.0 | LLM framework core utilities |
-| `langchain-google-genai` | ^0.1.0 | Google Gemini LLM integration |
+| `google-genai` | ^1.75.0 | Direct Google Gemini API client |
 | `langsmith` | ^0.1.0 | Tracing, debugging, & monitoring |
 | `e2b` | ^1.0.0 | Secure sandbox code execution |
 | `streamlit` | ^1.28.0 | Web UI framework |
@@ -421,7 +421,6 @@ SANDBOX_RAM_MB = 512  # E2B sandbox memory allocation
 |-------|----------|
 | `uv: command not found` | Install uv: `pip install uv` or follow [uv installation](https://docs.astral.sh/uv/#installation) |
 | `GOOGLE_API_KEY not found` | Verify `.env` file exists in root directory with correct key format |
-| `GROQ_API_KEY not found` | Add your Groq key to `.env`; Gemini is used as automatic fallback if Groq is missing |
 | `E2B_API_KEY invalid` | Check key hasn't expired; regenerate at [e2b.dev](https://e2b.dev) |
 | `Streamlit port 8501 already in use` | `uv run streamlit run app.py -- --server.port 8502` |
 | `ModuleNotFoundError: No module named 'langgraph'` | Run `uv sync` to install all dependencies |
@@ -429,7 +428,7 @@ SANDBOX_RAM_MB = 512  # E2B sandbox memory allocation
 | `E2B sandbox quota exceeded` | Check usage at E2B dashboard; free tier = 100 hrs/month |
 | `sh: vite: not found` during React build | Re-run generation; Vite detection now only checks `dependencies`/`devDependencies`, and `vite` + `@vitejs/plugin-react` are always included |
 | `npm run build` times out | Build timeout is now 600 s; if your project consistently exceeds this, consider breaking it into smaller modules |
-| Pipeline crashes with `RuntimeError: Both LLM providers failed` | Check that both `GROQ_API_KEY` and `GOOGLE_API_KEY` in `.env` are valid and have remaining quota |
+| Pipeline reports `RuntimeError: Gemini failed` | Check that `GOOGLE_API_KEY` in `.env` is valid and your Google AI plan has remaining quota |
 
 ### Useful uv Commands
 

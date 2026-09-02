@@ -28,15 +28,14 @@ This document provides detailed information about all project dependencies and t
 - **Usage**: Foundation for agent implementations and LLM interactions
 - **Docs**: https://python.langchain.com/
 
-**langchain-google-genai** (^0.1.0)
-- **Purpose**: Google Gemini LLM integration for LangChain
+**google-genai** (^1.75.0)
+- **Purpose**: Direct Google Gemini API client
 - **Key Features**:
-  - Gemini API integration
-  - Vision capabilities
-  - Streaming responses
-  - Token counting
-- **Usage**: LLM backbone for PM, Dev agents
-- **Docs**: https://python.langchain.com/docs/integrations/llms/google_generative_ai
+  - Gemini interactions API
+  - Synchronous and asynchronous clients
+  - Text and multimodal generation
+- **Usage**: Direct LLM backbone for PM, Dev agents, and design questions
+- **Docs**: https://googleapis.github.io/python-genai/
 
 ### Observability & Tracing
 
@@ -199,7 +198,7 @@ Install with: `uv sync --all-extras` or `uv add --dev <package>`
 Orchestration Layer
 ├── langgraph (state machine)
 ├── langchain (abstractions)
-└── langchain-google-genai (Gemini API)
+└── google-genai (Gemini API)
 
 Execution Layer
 ├── e2b (sandboxing)
@@ -299,7 +298,7 @@ These packages interact with external services that require free API keys:
 
 | Package | Service | Free Tier |
 |---------|---------|-----------|
-| langchain-google-genai | Google Gemini | 1,500 req/day |
+| google-genai | Google Gemini | Google AI plan |
 | e2b | E2B Sandbox | 100 hrs/month |
 | langsmith | LangSmith | 5,000 traces/month |
 

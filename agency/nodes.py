@@ -3,6 +3,7 @@ from typing_extensions import Literal
 import os
 import json
 import re
+from types import SimpleNamespace
 from dotenv import load_dotenv
 import traceback
 
@@ -19,8 +20,8 @@ from .sandbox_runners import (
 # Load environment variables from .env file
 load_dotenv()
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_groq import ChatGroq
+from google import genai
+from google.genai import types
 
 
 
@@ -32,28 +33,23 @@ from langsmith import traceable
 
 def model(prompt, temperature=0.3):
     try:
-        llm = ChatGroq(
-            model="qwen/qwen3.8-27b",
-            temperature=temperature,
-            api_key=os.getenv('GROQ_API_KEY')
+        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+        response = client.interactions.create(
+            model="gemini-3.7-flash",
+            input=prompt,
+            generation_config=types.GenerationConfig(temperature=temperature),
         )
-        return llm.invoke(prompt)
 
-    except Exception as groq_error:
-        print(f"Groq failed: {groq_error}. Falling back to Gemini...")
-        try:
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-3.6-flash",
-                temperature=temperature,
-                api_key=os.getenv('GOOGLE_API_KEY')
-            )
-            return llm.invoke(prompt)
-        except Exception as gemini_error:
-            raise RuntimeError(
-                f"Both LLM providers failed.\n"
-                f"  Groq error:   {groq_error}\n"
-                f"  Gemini error: {gemini_error}"
-            ) from gemini_error
+        content = getattr(response, "output_text", None)
+        if content is None:
+            outputs = getattr(response, "outputs", [])
+            if not outputs or not getattr(outputs[0], "text", None):
+                raise ValueError("Gemini returned no text output")
+            content = outputs[0].text
+        return SimpleNamespace(content=content)
+
+    except Exception as gemini_error:
+        raise RuntimeError(f"Gemini failed: {gemini_error}") from gemini_error
 
        
 

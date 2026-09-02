@@ -150,13 +150,13 @@ if st.session_state.phase == "idle":
     st.title("🚀 The Automaton Boardroom")
     st.markdown(
         "*An autonomous multi-agent software factory — powered by **LangGraph**, "
-        "**Gemini / Groq**, and **E2B** secure sandboxes.*"
+        "**Gemini**, and **E2B** secure sandboxes.*"
     )
     st.divider()
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Agents", "5", help="PM · Design Questions · Developer · Tester · Human Review")
-    c2.metric("LLM", "Groq + Gemini", help="Groq primary, Gemini fallback")
+    c2.metric("LLM", "Gemini 3.7 Flash", help="Google Gemini API")
     c3.metric("Execution", "E2B Sandbox", help="Isolated, secure code execution")
     c4.metric("Cost", "$0", help="Free developer tiers only")
 
