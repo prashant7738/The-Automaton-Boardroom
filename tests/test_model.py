@@ -29,7 +29,7 @@ def test_model_uses_gemini_interactions_and_preserves_content_contract(monkeypat
     assert captured["client"] == {"api_key": "test-key"}
     assert captured["model"] == "gemini-3.7-flash"
     assert captured["input"] == "Explain AI"
-    assert captured["generation_config"].temperature == 0.0
+    assert "generation_config" not in captured
 
 
 def test_model_supports_output_text_response_shape(monkeypatch):
@@ -44,6 +44,26 @@ def test_model_supports_output_text_response_shape(monkeypatch):
     monkeypatch.setattr(nodes.genai, "Client", FakeClient)
 
     assert nodes.model("Explain AI").content == "Gemini response"
+
+
+def test_model_uses_configured_gemini_model(monkeypatch):
+    captured = {}
+
+    class FakeInteractions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(output_text="Gemini response")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.interactions = FakeInteractions()
+
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(nodes.genai, "Client", FakeClient)
+
+    nodes.model("Explain AI")
+
+    assert captured["model"] == "gemini-2.5-flash"
 
 
 def test_model_raises_clear_error_when_gemini_fails(monkeypatch):

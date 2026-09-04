@@ -21,7 +21,6 @@ from .sandbox_runners import (
 load_dotenv()
 
 from google import genai
-from google.genai import types
 
 
 
@@ -35,9 +34,8 @@ def model(prompt, temperature=0.3):
     try:
         client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         response = client.interactions.create(
-            model="gemini-3.7-flash",
+            model=os.getenv("GEMINI_MODEL", "gemini-3.7-flash"),
             input=prompt,
-            generation_config=types.GenerationConfig(temperature=temperature),
         )
 
         content = getattr(response, "output_text", None)
@@ -49,6 +47,12 @@ def model(prompt, temperature=0.3):
         return SimpleNamespace(content=content)
 
     except Exception as gemini_error:
+        error_text = str(gemini_error)
+        if "429" in error_text or "quota" in error_text.lower() or "too_many_requests" in error_text:
+            raise RuntimeError(
+                "Gemini quota exceeded. Wait for the retry interval or set GEMINI_MODEL "
+                "to another available model."
+            ) from gemini_error
         raise RuntimeError(f"Gemini failed: {gemini_error}") from gemini_error
 
        
