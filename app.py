@@ -13,9 +13,56 @@ from agency.graph import app as workflow
 
 # ─── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="The Automaton Boardroom",
-    page_icon="🤖",
+    page_title="Automaton Boardroom",
+    page_icon="A",
     layout="wide",
+)
+
+st.markdown(
+    """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+    --ink: #111318;
+    --muted: #6f737d;
+    --line: #e5e6e8;
+    --paper: #f7f7f5;
+    --card: #ffffff;
+    --coral: #ff6b4a;
+    --coral-deep: #d94d31;
+    --mint: #c8f2df;
+    --blue: #dce8ff;
+}
+
+.stApp { background: var(--paper); color: var(--ink); }
+[data-testid="stHeader"] { background: rgba(247,247,245,.88); }
+[data-testid="stSidebar"] { background: var(--ink); border-right: 0; }
+[data-testid="stSidebar"] * { color: #f7f7f5; }
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p { color: #a7abb4; }
+[data-testid="stSidebar"] hr { border-color: #30333a; }
+[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] { background: #1b1e24; border-color: #30333a; }
+h1, h2, h3, h4, p, label, button, [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; }
+h1 { letter-spacing: -0.04em; font-weight: 700; font-size: clamp(2.3rem, 5vw, 4.7rem); line-height: .98; }
+h2, h3 { letter-spacing: -0.025em; }
+[data-testid="stMetric"] { background: var(--card); border: 1px solid var(--line); padding: 1rem 1.1rem; border-radius: 8px; }
+[data-testid="stMetricLabel"] { color: var(--muted); font-family: 'DM Mono', monospace; text-transform: uppercase; font-size: .68rem; }
+[data-testid="stMetricValue"] { color: var(--ink); }
+[data-testid="stTextArea"] textarea, [data-testid="stTextInput"] input { background: var(--card); border: 1px solid #d7d9dd; border-radius: 7px; font-family: 'Space Grotesk', sans-serif; }
+[data-testid="stTextArea"] textarea:focus, [data-testid="stTextInput"] input:focus { border-color: var(--coral); box-shadow: 0 0 0 1px var(--coral); }
+.stButton > button, .stDownloadButton > button { border-radius: 6px; min-height: 2.7rem; font-weight: 600; border: 1px solid #d7d9dd; }
+.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] { background: var(--coral); border-color: var(--coral); color: white; }
+.stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover { background: var(--coral-deep); border-color: var(--coral-deep); }
+[data-testid="stExpander"] { background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+[data-testid="stProgressBar"] > div > div { background: var(--coral); }
+.eyebrow { color: var(--coral-deep); font: 500 .7rem 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; }
+.hero-copy { max-width: 720px; font-size: 1.12rem; color: var(--muted); }
+.section-label { color: var(--muted); font: 500 .72rem 'DM Mono', monospace; letter-spacing: .08em; text-transform: uppercase; }
+.status-pill { display: inline-block; padding: .35rem .65rem; border-radius: 999px; font: 500 .72rem 'DM Mono', monospace; background: var(--mint); color: #17563e; }
+.file-tab { font-family: 'DM Mono', monospace; font-size: .78rem; }
+</style>
+""",
+    unsafe_allow_html=True,
 )
 
 # ─── Session State Defaults ────────────────────────────────────────────────────
@@ -93,10 +140,24 @@ def _make_zip(source_files: dict) -> bytes:
     return buf.getvalue()
 
 
+def _language_for_file(filename: str) -> str:
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    return {
+        "py": "python", "js": "javascript", "jsx": "javascript", "ts": "typescript",
+        "tsx": "typescript", "json": "json", "md": "markdown", "html": "html",
+        "css": "css", "toml": "toml", "txt": "text", "yml": "yaml", "yaml": "yaml",
+    }.get(extension, "text")
+
+
+def _has_test_error(test_logs: str) -> bool:
+    markers = ("Error", "error", "FAILED", "failed", "exception", "Exception", "SyntaxError", "ModuleNotFoundError", "ImportError")
+    return any(marker in test_logs for marker in markers)
+
+
 # ─── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🤖 Automaton Boardroom")
-    st.caption("Autonomous Multi-Agent Software Factory")
+    st.markdown("## A / Boardroom")
+    st.caption("Autonomous software studio")
     st.divider()
 
     # Pipeline stage indicator
@@ -117,28 +178,28 @@ with st.sidebar:
         "error": -1,
     }
     current = phase_to_stage.get(st.session_state.phase, -1)
-    st.markdown("**Pipeline**")
+    st.markdown("<span class='section-label'>Pipeline</span>", unsafe_allow_html=True)
     for i, (label, _) in enumerate(stages):
         if i < current:
-            st.markdown(f"✅ {label}")
+            st.markdown(f"<span class='status-pill'>DONE</span> &nbsp; {label}", unsafe_allow_html=True)
         elif i == current:
-            st.markdown(f"⏳ **{label}**")
+            st.markdown(f"<span class='status-pill' style='background:#ffd9cf;color:#8d2f1c'>LIVE</span> &nbsp; <b>{label}</b>", unsafe_allow_html=True)
         else:
-            st.markdown(f"⬜ {label}")
+            st.markdown(f"<span style='color:#666b75'>○ &nbsp; {label}</span>", unsafe_allow_html=True)
 
     st.divider()
 
     if st.session_state.activity_log:
-        st.markdown("**Activity Log**")
+        st.markdown("<span class='section-label'>Activity log</span>", unsafe_allow_html=True)
         with st.container(border=True):
             log_container = st.container(height=180)
             with log_container:
                 for i, msg in enumerate(st.session_state.activity_log, 1):
-                    st.caption(f"{i}. {msg}")
+                    st.caption(f"{i:02d}  {msg}")
 
     if st.session_state.phase not in ("idle",):
         st.divider()
-        if st.button("🔄 Start Over", use_container_width=True):
+        if st.button("Start over", use_container_width=True):
             _reset()
             st.rerun()
 
@@ -147,10 +208,12 @@ with st.sidebar:
 # PHASE: IDLE
 # ═══════════════════════════════════════════════════════════════════════════════
 if st.session_state.phase == "idle":
-    st.title("🚀 The Automaton Boardroom")
+    st.markdown("<div class='eyebrow'>AUTOMATION / 01</div>", unsafe_allow_html=True)
+    st.title("Turn an idea into a tested build.")
     st.markdown(
-        "*An autonomous multi-agent software factory — powered by **LangGraph**, "
-        "**Gemini**, and **E2B** secure sandboxes.*"
+        "<p class='hero-copy'>A coordinated studio of product, design, engineering, and QA agents. "
+        "You set the brief. The boardroom handles the build.</p>",
+        unsafe_allow_html=True,
     )
     st.divider()
 
@@ -161,7 +224,8 @@ if st.session_state.phase == "idle":
     c4.metric("Cost", "$0", help="Free developer tiers only")
 
     st.divider()
-    st.subheader("What app do you want to build?")
+    st.markdown("<div class='section-label'>New build brief</div>", unsafe_allow_html=True)
+    st.subheader("What should the boardroom make?")
 
     examples = [
         "A Python script that fetches weather data from Open-Meteo API and prints a 7-day forecast for London",
@@ -170,7 +234,7 @@ if st.session_state.phase == "idle":
         "A Python script that sorts a list of numbers using bubble sort and prints each step",
     ]
 
-    with st.expander("💡 Example Ideas — click to use"):
+    with st.expander("Browse starting points"):
         for ex in examples:
             if st.button(ex, key=f"ex_{ex[:30]}", use_container_width=True):
                 st.session_state.idea_text = ex
@@ -185,50 +249,39 @@ if st.session_state.phase == "idle":
         label_visibility="collapsed",
     )
 
-    if st.button(
-        "🚀 Build It",
-        type="primary",
-        use_container_width=True,
-        disabled=not (idea or "").strip(),
-    ):
+    with st.form("new_build_form", clear_on_submit=False):
+        submitted = st.form_submit_button(
+            "Start build  →",
+            type="primary",
+            use_container_width=True,
+            disabled=not (idea or "").strip(),
+        )
+
+    if submitted:
         thread_id = str(uuid.uuid4())
         st.session_state.thread_id = thread_id
-
         initial_state = {
-            "app_idea": idea.strip(),
-            "specification": "",
-            "source_code": {},
-            "test_logs": "",
-            "iterations": 0,
-            "approved_by_human": False,
-            "human_feedback": "",
-            "design_questions": [],
-            "design_answers": {},
+            "app_idea": idea.strip(), "specification": "", "source_code": {}, "test_logs": "",
+            "iterations": 0, "approved_by_human": False, "human_feedback": "",
+            "design_questions": [], "design_answers": {},
         }
-
         _log(f"Workflow started: {idea.strip()[:80]}")
         _submit_bg(_run_initial, initial_state, _cfg())
         st.session_state.phase = "running"
         st.rerun()
 
     st.divider()
-    st.markdown(
-        "**How it works:** "
-        "1) PM writes a technical spec → "
-        "2) Design Questions MCQ narrows scope/features → "
-        "3) Developer writes code honoring those choices → "
-        "4) Tester runs it in E2B sandbox → "
-        "5) Errors auto-loop back to Developer (up to 5 times) → "
-        "6) You review and approve the final output."
-    )
+    st.markdown("<div class='section-label'>The loop</div>", unsafe_allow_html=True)
+    st.markdown("**Brief**  →  **Decide**  →  **Build**  →  **Test**  →  **Review**  →  **Ship**")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PHASE: RUNNING
 # ═══════════════════════════════════════════════════════════════════════════════
 elif st.session_state.phase == "running":
-    st.title("⚙️ Agents at Work…")
-    st.markdown("The pipeline is running. This may take a few minutes while the E2B sandbox executes your code.")
+    st.markdown("<div class='eyebrow'>AUTOMATION / LIVE</div>", unsafe_allow_html=True)
+    st.title("The boardroom is working.")
+    st.markdown("Agents are turning your brief into a verified project. This can take a few minutes.")
 
     future = st.session_state.future
 
@@ -275,13 +328,9 @@ elif st.session_state.phase == "running":
         snap_index = int(time.time() / 4) % len(progress_msgs)
 
         with st.spinner(progress_msgs[snap_index]):
-            st.info(
-                "⏳ Working… Typical completion time: 1–4 minutes. "
-                "LangSmith tracing is active if configured.",
-                icon="🔬",
-            )
+            st.progress(0.66, text="Pipeline active · specification, code, and verification in motion")
             if st.session_state.activity_log:
-                st.caption(f"Last: {st.session_state.activity_log[-1]}")
+                st.markdown(f"**Latest signal**  {st.session_state.activity_log[-1]}")
 
         time.sleep(0.5)
         st.rerun()
@@ -291,11 +340,9 @@ elif st.session_state.phase == "running":
 # PHASE: DESIGN QUESTIONS
 # ═══════════════════════════════════════════════════════════════════════════════
 elif st.session_state.phase == "design_questions":
-    st.title("🧭 Design Decisions")
-    st.markdown(
-        "Choose options for key build decisions. Your choices will guide the Developer agent.  "
-        "*(All choices are single-select; no free-text input.)*"
-    )
+    st.markdown("<div class='eyebrow'>DECISION GATE / 02</div>", unsafe_allow_html=True)
+    st.title("Choose the shape of the build.")
+    st.markdown("A few high-impact decisions will steer the developer agent. Pick one answer per question.")
     st.divider()
 
     payload = st.session_state.interrupt_payload or {}
@@ -313,7 +360,7 @@ elif st.session_state.phase == "design_questions":
             qid = q.get("id", "q")
             question = q.get("question", qid)
             options = q.get("options", [])
-            st.markdown(f"**Question {idx} of {len(design_questions)}**")
+            st.markdown(f"<div class='section-label'>Decision {idx:02d} / {len(design_questions):02d}</div>", unsafe_allow_html=True)
             answers[qid] = st.radio(question, options, key=f"dq_{qid}", label_visibility="collapsed")
             st.divider()
 
@@ -321,7 +368,7 @@ elif st.session_state.phase == "design_questions":
         with col1:
             st.empty()
         with col2:
-            submitted = st.form_submit_button("✅ Submit", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("Lock decisions  →", type="primary", use_container_width=True)
 
     if submitted:
         _log(f"Design decisions collected: {list(answers.keys())}")
@@ -334,7 +381,8 @@ elif st.session_state.phase == "design_questions":
 # PHASE: HUMAN REVIEW
 # ═══════════════════════════════════════════════════════════════════════════════
 elif st.session_state.phase == "human_review":
-    st.title("👤 Human Review")
+    st.markdown("<div class='eyebrow'>SIGN-OFF / 05</div>", unsafe_allow_html=True)
+    st.title("Your review is the final gate.")
     payload = st.session_state.interrupt_payload or {}
 
     snap = workflow.get_state(_cfg())
@@ -342,42 +390,29 @@ elif st.session_state.phase == "human_review":
 
     iterations = final.get("iterations", 0)
     st.markdown(
-        f"The agents have finished after **{iterations} iteration(s)**. "
-        "Review the generated code and test results below."
+        f"The agents completed **{iterations} iteration(s)**. Review the output, then approve delivery or send one focused revision note."
     )
 
     # ── Code viewer ────────────────────────────────────────────────────────────
     source_files = final.get("source_code", {})
     if source_files:
-        st.subheader(f"📁 Generated Files ({len(source_files)})")
+        st.markdown(f"<div class='section-label'>Generated files · {len(source_files)}</div>", unsafe_allow_html=True)
         tabs = st.tabs(list(source_files.keys()))
         for tab, (fname, content) in zip(tabs, source_files.items()):
             with tab:
-                ext = fname.rsplit(".", 1)[-1] if "." in fname else "text"
-                lang_map = {
-                    "py": "python", "js": "javascript", "jsx": "javascript",
-                    "ts": "typescript", "tsx": "typescript", "json": "json",
-                    "md": "markdown", "html": "html", "css": "css",
-                    "toml": "toml", "txt": "text", "yml": "yaml", "yaml": "yaml",
-                }
-                # Show file info
                 file_size = len(content.encode())
-                st.caption(f"📄 {fname} · {file_size:,} bytes")
-                st.code(content, language=lang_map.get(ext, "text"), line_numbers=True)
+                st.caption(f"{fname} · {file_size:,} bytes")
+                st.code(content, language=_language_for_file(fname), line_numbers=True)
 
     # ── Test logs ──────────────────────────────────────────────────────────────
     test_logs = final.get("test_logs", "")
     if test_logs:
-        st.subheader("🧪 Test Logs")
-        has_error = any(
-            kw in test_logs
-            for kw in ("Error", "error", "FAILED", "failed", "exception", "Exception",
-                       "SyntaxError", "ModuleNotFoundError", "ImportError")
-        )
+        st.subheader("Verification")
+        has_error = _has_test_error(test_logs)
         if has_error:
-            st.warning("⚠️ Errors were detected — the Developer will auto-correct on revision.", icon="⚠️")
+            st.warning("Errors were detected. A revision can be sent back to the developer.")
         else:
-            st.success("✅ All tests passed!", icon="✅")
+            st.success("All tests passed.")
         with st.expander(f"📋 Full Logs ({len(test_logs):,} chars)", expanded=False):
             st.code(test_logs, language="text")
 
@@ -385,38 +420,37 @@ elif st.session_state.phase == "human_review":
 
     # ── Approval controls ──────────────────────────────────────────────────────
     st.subheader("Decision")
-    col_approve, col_reject = st.columns(2)
+    with st.form("review_form"):
+        reject_reason = st.text_input(
+            "Revision note",
+            placeholder="Optional for approval. For revision: e.g. Add authentication to the API.",
+            max_chars=500,
+        )
+        col_approve, col_reject = st.columns(2)
+        with col_approve:
+            approve = st.form_submit_button("Approve & deliver  →", type="primary", use_container_width=True)
+        with col_reject:
+            reject = st.form_submit_button("Send revision note", use_container_width=True)
 
-    with col_approve:
-        if st.button("✅ Approve & Deliver", type="primary", use_container_width=True):
+    if approve:
             _log("Human approved the output.")
             _submit_bg(_run_resume, Command(resume="yes"), _cfg())
             st.session_state.phase = "running"
             st.rerun()
-
-    with col_reject:
-        reject_reason = st.text_input(
-            "What needs to be fixed? (optional feedback to Developer)",
-            placeholder="e.g. The API is missing authentication",
-            label_visibility="collapsed",
-            max_chars=500,
-        )
-        if st.button(
-            "🔁 Reject & Revise",
-            use_container_width=True,
-            disabled=not reject_reason.strip(),
-        ):
-            _log(f"Human rejected: {reject_reason.strip()[:80]}")
-            _submit_bg(_run_resume, Command(resume=reject_reason.strip()), _cfg())
-            st.session_state.phase = "running"
-            st.rerun()
+    elif reject and reject_reason.strip():
+        _log(f"Human rejected: {reject_reason.strip()[:80]}")
+        _submit_bg(_run_resume, Command(resume=reject_reason.strip()), _cfg())
+        st.session_state.phase = "running"
+        st.rerun()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PHASE: DONE
 # ═══════════════════════════════════════════════════════════════════════════════
 elif st.session_state.phase == "done":
-    st.title("📦 Delivery Complete")
+    st.markdown("<div class='eyebrow'>DELIVERY / COMPLETE</div>", unsafe_allow_html=True)
+    st.title("Your build is ready.")
+    st.markdown("The reviewed project has been packaged and is ready to leave the boardroom.")
     st.balloons()
 
     snap = workflow.get_state(_cfg())
@@ -428,7 +462,7 @@ elif st.session_state.phase == "done":
     test_logs = final.get("test_logs", "")
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Status", "✅ Approved" if approved else "⚠️ Completed", help="Human approval status")
+    col1.metric("Status", "Approved" if approved else "Completed", help="Human approval status")
     col2.metric("Iterations", iterations, help="Dev → Test cycles used")
     col3.metric("Files Generated", len(source_files))
 
@@ -438,7 +472,7 @@ elif st.session_state.phase == "done":
     if source_files:
         zip_bytes = _make_zip(source_files)
         st.download_button(
-            label="⬇️ Download Project ZIP",
+            label="Download project ZIP  ↓",
             data=zip_bytes,
             file_name="automaton_output.zip",
             mime="application/zip",
@@ -450,21 +484,13 @@ elif st.session_state.phase == "done":
 
     # ── Code viewer ────────────────────────────────────────────────────────────
     if source_files:
-        st.subheader(f"📁 Generated Files ({len(source_files)})")
+        st.markdown(f"<div class='section-label'>Generated files · {len(source_files)}</div>", unsafe_allow_html=True)
         tabs = st.tabs(list(source_files.keys()))
         for tab, (fname, content) in zip(tabs, source_files.items()):
             with tab:
-                ext = fname.rsplit(".", 1)[-1] if "." in fname else "text"
-                lang_map = {
-                    "py": "python", "js": "javascript", "jsx": "javascript",
-                    "ts": "typescript", "tsx": "typescript", "json": "json",
-                    "md": "markdown", "html": "html", "css": "css",
-                    "toml": "toml", "txt": "text", "yml": "yaml", "yaml": "yaml",
-                }
-                # Show file info
                 file_size = len(content.encode())
-                st.caption(f"📄 {fname} · {file_size:,} bytes")
-                st.code(content, language=lang_map.get(ext, "text"), line_numbers=True)
+                st.caption(f"{fname} · {file_size:,} bytes")
+                st.code(content, language=_language_for_file(fname), line_numbers=True)
 
     # ── Test logs ──────────────────────────────────────────────────────────────
     if test_logs:
@@ -472,7 +498,7 @@ elif st.session_state.phase == "done":
             st.code(test_logs, language="text")
 
     st.divider()
-    if st.button("🔄 Build Another App", use_container_width=True):
+    if st.button("Build another app", use_container_width=True):
         _reset()
         st.rerun()
 
@@ -481,11 +507,12 @@ elif st.session_state.phase == "done":
 # PHASE: ERROR
 # ═══════════════════════════════════════════════════════════════════════════════
 elif st.session_state.phase == "error":
-    st.title("❌ Something Went Wrong")
+    st.markdown("<div class='eyebrow'>SYSTEM / RECOVERY</div>", unsafe_allow_html=True)
+    st.title("The run needs attention.")
     err = st.session_state.interrupt_payload or "An unknown error occurred."
     st.error(err)
 
-    st.markdown("**Possible causes:**")
+    st.markdown("**Common causes**")
     st.markdown(
         "- Invalid or missing API key (check your `.env` file)\n"
         "- E2B sandbox quota exhausted (100 hrs/month free tier)\n"
@@ -493,6 +520,6 @@ elif st.session_state.phase == "error":
         "- Network timeout during sandbox execution"
     )
 
-    if st.button("🔄 Try Again", type="primary", use_container_width=True):
+    if st.button("Reset and try again  →", type="primary", use_container_width=True):
         _reset()
         st.rerun()
