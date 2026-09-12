@@ -27,7 +27,7 @@ def test_model_uses_gemini_interactions_and_preserves_content_contract(monkeypat
 
     assert response.content == "Gemini response"
     assert captured["client"] == {"api_key": "test-key"}
-    assert captured["model"] == "gemini-3.7-flash"
+    assert captured["model"] == "gemini-2.5-flash"
     assert captured["input"] == "Explain AI"
     assert "generation_config" not in captured
 
@@ -75,3 +75,25 @@ def test_model_raises_clear_error_when_gemini_fails(monkeypatch):
 
     with pytest.raises(RuntimeError, match="Gemini failed"):
         nodes.model("Explain AI")
+
+
+def test_developer_node_surfaces_generation_failure(monkeypatch):
+    def failed_model(prompt, temperature=0.3):
+        raise RuntimeError("Gemini quota exceeded")
+
+    monkeypatch.setattr(nodes, "model", failed_model)
+
+    with pytest.raises(RuntimeError, match="Developer failed to generate source files"):
+        nodes.developer_node(
+            {
+                "app_idea": "Create an ecommerce website",
+                "specification": "Build a React storefront",
+                "source_code": {},
+                "test_logs": "",
+                "iterations": 0,
+                "approved_by_human": False,
+                "human_feedback": "",
+                "design_questions": [],
+                "design_answers": {},
+            }
+        )

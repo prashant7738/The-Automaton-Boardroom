@@ -302,6 +302,60 @@ Open your browser to `http://localhost:8501`
 
 ---
 
+## Free public hosting (Streamlit Community Cloud)
+
+For a personal demo or portfolio, the simplest completely free option is
+[Streamlit Community Cloud](https://share.streamlit.io/). It runs this repository's
+existing `app.py` entrypoint and does not require a separate server or Docker image.
+
+### Deploy
+
+1. Push the repository to GitHub. Keep `.env` local; it is ignored by Git.
+2. Sign in to Streamlit Community Cloud with GitHub and select **Create app**.
+3. Select this repository, the `main` branch, and set **Main file path** to `app.py`.
+4. Select Python `3.12` to match `.python-version`. The cloud builder uses the
+   repository's `pyproject.toml`/`uv.lock` dependency metadata.
+5. Before launching, open **Advanced settings → Secrets** and add:
+
+   ```toml
+   GOOGLE_API_KEY = "your_gemini_api_key"
+   GEMINI_MODEL = "gemini-2.5-flash"
+   E2B_API_KEY = "your_e2b_api_key"
+
+   # Optional LangSmith tracing
+   LANGCHAIN_TRACING_V2 = "false"
+   LANGCHAIN_API_KEY = "your_langsmith_api_key"
+   LANGCHAIN_PROJECT = "automaton-boardroom"
+   ```
+
+   At startup, `app.py` mirrors these top-level Streamlit secrets into the
+   environment so the hosted app uses the same names as the local `.env` setup.
+   Do not paste API keys into source files, chat messages, screenshots, or
+   committed files.
+6. Click **Deploy** and wait for the dependency installation and first startup.
+   The generated public URL can be shared directly.
+
+### Verify and maintain the demo
+
+- Open the public URL, enter a small app idea, and confirm the workflow reaches
+  the design-question or human-review step.
+- Check the app logs if startup fails. Missing `GOOGLE_API_KEY` or `E2B_API_KEY`,
+  dependency installation errors, and exhausted Gemini/E2B quotas are the most
+  likely causes.
+- Use **Manage app → Settings → Secrets** to rotate or remove a credential.
+  Restart the app after changing secrets.
+- Streamlit Community Cloud may sleep inactive apps, and Gemini/E2B free-tier
+  quotas are independent of the hosting service.
+
+### Demo limitations
+
+This deployment is suitable for a public demonstration, not a production
+multi-user service. The workflow uses LangGraph's in-memory `MemorySaver`, so
+active state is lost when the process restarts and is not shared between
+instances or users. Production hosting would additionally need a persistent
+checkpointer/database, authentication, rate limiting, durable job handling, and
+monitoring.
+
 ## � Development Setup
 
 ### Install Development Dependencies

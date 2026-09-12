@@ -1,15 +1,26 @@
-from dotenv import load_dotenv
-load_dotenv()
-
-import streamlit as st
+import io
+import os
+import time
 import uuid
 import zipfile
-import io
-import time
 from concurrent.futures import ThreadPoolExecutor
 
+import streamlit as st
+from dotenv import load_dotenv
 from langgraph.types import Command
+
 from agency.graph import app as workflow
+
+load_dotenv()
+
+# Streamlit Community Cloud provides hosted values through st.secrets rather than
+# a local .env file. Mirror top-level secrets into the environment so the
+# workflow and third-party SDKs keep one configuration contract.
+try:
+    for _name, _value in st.secrets.items():
+        os.environ.setdefault(_name, str(_value))
+except FileNotFoundError:
+    pass
 
 # ─── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(

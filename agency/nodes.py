@@ -34,7 +34,7 @@ def model(prompt, temperature=0.3):
     try:
         client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         response = client.interactions.create(
-            model=os.getenv("GEMINI_MODEL", "gemini-3.7-flash"),
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             input=prompt,
         )
 
@@ -875,8 +875,9 @@ def developer_node(state: AgencyState) -> Dict:
     try:
         response = model(prompt)
     except RuntimeError as e:
-        print(f"[developer_node] LLM unavailable: {e}. Returning empty source.")
-        return {"source_code": {}, "iterations": current_iterations}
+        raise RuntimeError(
+            f"Developer failed to generate source files: {e}"
+        ) from e
     raw = response.content.strip()
 
     # Strip markdown fences if present
