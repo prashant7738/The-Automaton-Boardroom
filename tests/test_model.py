@@ -27,7 +27,7 @@ def test_model_uses_gemini_interactions_and_preserves_content_contract(monkeypat
 
     assert response.content == "Gemini response"
     assert captured["client"] == {"api_key": "test-key"}
-    assert captured["model"] == "gemini-2.5-flash"
+    assert captured["model"] == "gemini-3.6-flash"
     assert captured["input"] == "Explain AI"
     assert "generation_config" not in captured
 

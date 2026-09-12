@@ -34,7 +34,7 @@ def model(prompt, temperature=0.3):
     try:
         client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         response = client.interactions.create(
-            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
             input=prompt,
         )
 

@@ -319,7 +319,7 @@ existing `app.py` entrypoint and does not require a separate server or Docker im
 
    ```toml
    GOOGLE_API_KEY = "your_gemini_api_key"
-   GEMINI_MODEL = "gemini-2.5-flash"
+   GEMINI_MODEL = "gemini-3.6-flash"
    E2B_API_KEY = "your_e2b_api_key"
 
    # Optional LangSmith tracing
