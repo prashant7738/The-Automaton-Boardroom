@@ -3,6 +3,7 @@ from typing_extensions import Literal
 import os
 import json
 import re
+from contextvars import ContextVar
 from types import SimpleNamespace
 from dotenv import load_dotenv
 import traceback
@@ -30,9 +31,22 @@ from langgraph.types import interrupt
 from langsmith import traceable
 
 
+_request_api_key: ContextVar[str | None] = ContextVar("request_api_key", default=None)
+
+
+def set_request_api_key(api_key: str | None):
+    """Scope a user-supplied Gemini key to the current context; returns a reset token."""
+    return _request_api_key.set((api_key or "").strip() or None)
+
+
+def reset_request_api_key(token) -> None:
+    _request_api_key.reset(token)
+
+
 def model(prompt, temperature=0.3):
     try:
-        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+        api_key = _request_api_key.get() or os.getenv("GOOGLE_API_KEY")
+        client = genai.Client(api_key=api_key)
         response = client.interactions.create(
             model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
             input=prompt,

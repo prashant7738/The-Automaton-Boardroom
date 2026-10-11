@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from langgraph.types import Command
 
 from agency.graph import app as workflow
+from agency.nodes import reset_request_api_key, set_request_api_key
 
 load_dotenv()
 
@@ -34,41 +35,47 @@ st.markdown(
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
+/* Main-area colors follow Streamlit's light/dark theme; only accents and the sidebar are fixed. */
 :root {
-    --ink: #111318;
-    --muted: #6f737d;
-    --line: #e5e6e8;
-    --paper: #f7f7f5;
-    --card: #ffffff;
     --coral: #ff6b4a;
     --coral-deep: #d94d31;
     --mint: #c8f2df;
-    --blue: #dce8ff;
+    --rule: rgba(128, 128, 128, .3);
+    --soft: rgba(128, 128, 128, .08);
+    --side-ink: #111318;
+    --side-card: #1b1e24;
+    --side-line: #30333a;
+    --side-text: #f7f7f5;
 }
 
-.stApp { background: var(--paper); color: var(--ink); }
-[data-testid="stHeader"] { background: rgba(247,247,245,.88); }
-[data-testid="stSidebar"] { background: var(--ink); border-right: 0; }
-[data-testid="stSidebar"] * { color: #f7f7f5; }
+[data-testid="stSidebar"] { background: var(--side-ink); border-right: 0; }
+[data-testid="stSidebar"] * { color: var(--side-text); }
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p { color: #a7abb4; }
-[data-testid="stSidebar"] hr { border-color: #30333a; }
-[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] { background: #1b1e24; border-color: #30333a; }
+[data-testid="stSidebar"] hr { border-color: var(--side-line); }
+[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] { background: var(--side-card); border-color: var(--side-line); }
+[data-testid="stSidebar"] [data-baseweb="input"] { background: var(--side-card); border-color: var(--side-line); }
+[data-testid="stSidebar"] [data-baseweb="input"] input { background: transparent; color: var(--side-text); -webkit-text-fill-color: var(--side-text); }
+[data-testid="stSidebar"] [data-baseweb="base-input"] { background: transparent; }
+[data-testid="stSidebar"] [data-baseweb="input"] input::placeholder { color: #8a8f99; opacity: 1; }
+[data-testid="stSidebar"] .stButton > button { background: var(--side-card); border-color: var(--side-line); }
+[data-testid="stSidebar"] .stButton > button:hover { border-color: var(--coral); color: var(--coral); }
 h1, h2, h3, h4, p, label, button, [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; }
 h1 { letter-spacing: -0.04em; font-weight: 700; font-size: clamp(2.3rem, 5vw, 4.7rem); line-height: .98; }
 h2, h3 { letter-spacing: -0.025em; }
-[data-testid="stMetric"] { background: var(--card); border: 1px solid var(--line); padding: 1rem 1.1rem; border-radius: 8px; }
-[data-testid="stMetricLabel"] { color: var(--muted); font-family: 'DM Mono', monospace; text-transform: uppercase; font-size: .68rem; }
-[data-testid="stMetricValue"] { color: var(--ink); }
-[data-testid="stTextArea"] textarea, [data-testid="stTextInput"] input { background: var(--card); border: 1px solid #d7d9dd; border-radius: 7px; font-family: 'Space Grotesk', sans-serif; }
+[data-testid="stMetric"] { background: var(--soft); border: 1px solid var(--rule); padding: 1rem 1.1rem; border-radius: 8px; }
+[data-testid="stMetricLabel"] { opacity: .75; font-family: 'DM Mono', monospace; text-transform: uppercase; font-size: .68rem; }
+[data-testid="stMetricValue"] { font-size: 1.7rem; line-height: 1.2; }
+[data-testid="stMetricValue"], [data-testid="stMetricValue"] * { white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+[data-testid="stTextArea"] textarea, [data-testid="stTextInput"] input { border: 1px solid var(--rule); border-radius: 7px; font-family: 'Space Grotesk', sans-serif; }
 [data-testid="stTextArea"] textarea:focus, [data-testid="stTextInput"] input:focus { border-color: var(--coral); box-shadow: 0 0 0 1px var(--coral); }
-.stButton > button, .stDownloadButton > button { border-radius: 6px; min-height: 2.7rem; font-weight: 600; border: 1px solid #d7d9dd; }
+.stButton > button, .stDownloadButton > button { border-radius: 6px; min-height: 2.7rem; font-weight: 600; }
 .stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] { background: var(--coral); border-color: var(--coral); color: white; }
 .stButton > button[kind="primary"]:hover, .stDownloadButton > button[kind="primary"]:hover { background: var(--coral-deep); border-color: var(--coral-deep); }
-[data-testid="stExpander"] { background: var(--card); border: 1px solid var(--line); border-radius: 8px; }
+[data-testid="stExpander"] { border: 1px solid var(--rule); border-radius: 8px; }
 [data-testid="stProgressBar"] > div > div { background: var(--coral); }
 .eyebrow { color: var(--coral-deep); font: 500 .7rem 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; }
-.hero-copy { max-width: 720px; font-size: 1.12rem; color: var(--muted); }
-.section-label { color: var(--muted); font: 500 .72rem 'DM Mono', monospace; letter-spacing: .08em; text-transform: uppercase; }
+.hero-copy { max-width: 720px; font-size: 1.12rem; opacity: .8; }
+.section-label { opacity: .75; font: 500 .72rem 'DM Mono', monospace; letter-spacing: .08em; text-transform: uppercase; }
 .status-pill { display: inline-block; padding: .35rem .65rem; border-radius: 999px; font: 500 .72rem 'DM Mono', monospace; background: var(--mint); color: #17563e; }
 .file-tab { font-family: 'DM Mono', monospace; font-size: .78rem; }
 </style>
@@ -100,6 +107,14 @@ def _log(msg: str) -> None:
     st.session_state.activity_log.append(msg)
 
 
+def _user_api_key() -> str:
+    return (st.session_state.get("gemini_api_key_input") or "").strip()
+
+
+def _clear_user_api_key() -> None:
+    st.session_state.gemini_api_key_input = ""
+
+
 def _get_graph_interrupt():
     """Return (payload, is_finished) from the current LangGraph state."""
     snap = workflow.get_state(_cfg())
@@ -116,11 +131,21 @@ def _get_graph_interrupt():
     return None, False  # running but no interrupt surfaced yet
 
 
+def _call_with_user_key(api_key: str, fn, *args) -> None:
+    token = set_request_api_key(api_key)
+    try:
+        fn(*args)
+    finally:
+        reset_request_api_key(token)
+
+
 def _submit_bg(fn, *args) -> None:
     """Submit a blocking LangGraph call to a background thread."""
     if st.session_state.executor is None:
         st.session_state.executor = ThreadPoolExecutor(max_workers=1)
-    st.session_state.future = st.session_state.executor.submit(fn, *args)
+    st.session_state.future = st.session_state.executor.submit(
+        _call_with_user_key, _user_api_key(), fn, *args
+    )
 
 
 def _run_initial(initial_state: dict, config: dict) -> None:
@@ -171,6 +196,20 @@ with st.sidebar:
     st.caption("Autonomous software studio")
     st.divider()
 
+    st.text_input(
+        "Your Gemini API key",
+        key="gemini_api_key_input",
+        type="password",
+        placeholder="Paste key from aistudio.google.com",
+        help="Held in memory for this browser session only. Not written to disk or logs.",
+    )
+    if _user_api_key():
+        st.caption("Using your key for this session.")
+        st.button("Remove key", on_click=_clear_user_api_key, use_container_width=True)
+    else:
+        st.caption("No key entered. The server key from .env is used.")
+    st.divider()
+
     # Pipeline stage indicator
     stages = [
         ("📋 PM Agent", "Spec"),
@@ -196,7 +235,7 @@ with st.sidebar:
         elif i == current:
             st.markdown(f"<span class='status-pill' style='background:#ffd9cf;color:#8d2f1c'>LIVE</span> &nbsp; <b>{label}</b>", unsafe_allow_html=True)
         else:
-            st.markdown(f"<span style='color:#666b75'>○ &nbsp; {label}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:#9aa0aa'>○ &nbsp; {label}</span>", unsafe_allow_html=True)
 
     st.divider()
 
@@ -525,7 +564,7 @@ elif st.session_state.phase == "error":
 
     st.markdown("**Common causes**")
     st.markdown(
-        "- Invalid or missing API key (check your `.env` file)\n"
+        "- Invalid or missing Gemini key (set it in the sidebar or your `.env` file)\n"
         "- E2B sandbox quota exhausted (100 hrs/month free tier)\n"
         "- Groq / Gemini rate limit hit\n"
         "- Network timeout during sandbox execution"

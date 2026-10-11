@@ -32,6 +32,32 @@ def test_model_uses_gemini_interactions_and_preserves_content_contract(monkeypat
     assert "generation_config" not in captured
 
 
+def test_model_prefers_request_api_key_over_server_env(monkeypatch):
+    clients = []
+
+    class FakeInteractions:
+        def create(self, **kwargs):
+            return SimpleNamespace(output_text="Gemini response")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            clients.append(kwargs)
+            self.interactions = FakeInteractions()
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "server-key")
+    monkeypatch.setattr(nodes.genai, "Client", FakeClient)
+
+    token = nodes.set_request_api_key("  user-key  ")
+    try:
+        nodes.model("Explain AI")
+    finally:
+        nodes.reset_request_api_key(token)
+    nodes.model("Explain AI")
+
+    assert clients[0] == {"api_key": "user-key"}
+    assert clients[1] == {"api_key": "server-key"}
+
+
 def test_model_supports_output_text_response_shape(monkeypatch):
     class FakeInteractions:
         def create(self, **kwargs):
