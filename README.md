@@ -1,601 +1,219 @@
-# 🚀 The Automaton Boardroom: Autonomous Multi-Agent Software Micro-Agency
+# Automaton Boardroom
 
-An advanced, production-grade software engineering multi-agent system built entirely with **LangGraph**, **LangSmith**, and **E2B**. 
+A multi-agent software micro-agency built with LangGraph. Describe an application in plain language; the system writes a specification, asks a few build-decision questions, generates the code, runs it in an isolated E2B sandbox, fixes failures automatically, and waits for human approval before delivering a zipped project.
 
-Instead of generating static, unverified code chunks, **The Automaton Boardroom** simulates a real software development company. It translates a user's high-level application idea into a rigorous technical spec, writes code files, provisions an isolated Linux cloud sandbox, installs required dependencies, runs verification tests, detects compiler/runtime errors, loops back to self-correct its own codebase, and asks for human feedback before compiling a polished, zipped output.
+## Contents
 
-> **Zero-Cost Solution**: Built entirely on free developer tiers. No credit card required. No hidden fees. $0 to build production-grade AI-assisted software.
+- [Features](#features)
+- [How it works](#how-it-works)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the app](#running-the-app)
+- [Deployment](#deployment)
+- [Project structure](#project-structure)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Limitations](#limitations)
+- [License](#license)
 
----
+## Features
 
-## ✨ Key Features
+- **Full development lifecycle**: specification, design decisions, code generation, sandboxed testing, self-correction, and human review.
+- **Build-decision questions**: up to 5 single-choice questions about scope and architecture are asked before coding, and the answers constrain the generated code.
+- **Self-correction**: test or runtime failures are fed back to the developer agent, for up to 5 iterations.
+- **Isolated execution**: generated code runs in an [E2B](https://e2b.dev) cloud sandbox, not on the host.
+- **Stack-aware generation**: plain Python scripts, FastAPI, Django, React (Vite), and full-stack FastAPI + React projects each get stack-specific guidance.
+- **Prompt-injection guards**: user input and LLM output are sanitized, length-capped, and validated before use.
+- **Human-in-the-loop**: approve the result or reject it with a reason that is sent back to the developer agent.
+- **Observability**: agent nodes are instrumented with LangSmith `@traceable` for optional tracing.
+- **Two interfaces**: a Streamlit web UI (`app.py`) and a command-line runner (`main.py`).
 
-- ✅ **Full Development Lifecycle**: Spec → Design Decisions → Code → Test → Self-Correct → Human Review → Delivery
-- ✅ **Build-Decision MCQ Gating**: Asks up to 5 single-choice MCQ questions about impactful scope/feature/design decisions before coding
-- ✅ **Self-Healing AI**: Automatically detects and fixes bugs through iterative testing
-- ✅ **Isolated Execution**: Secure E2B sandbox prevents malicious code execution
-- ✅ **Prompt-Safety Guardrails**: User inputs are wrapped, scanned for injection, and length-capped before reaching any LLM
-- ✅ **Gemini-Powered Generation**: Uses Google Gemini for specifications, design questions, code generation, and self-correction
-- ✅ **Human-in-the-Loop**: Pause and approve before final deployment
-- ✅ **Zero Dependencies Cost**: Uses only free-tier APIs (Google Gemini, E2B, LangSmith)
-- ✅ **Full Observability**: LangSmith tracing for debugging and performance monitoring
-- ✅ **Streamlit UI**: Beautiful, interactive web interface for non-technical users
-- ✅ **Stack-Aware Prompt Skills**: Injects frontend, backend, or plain-Python guidance into the developer prompt so generated code better matches the requested stack
-- ✅ **Robust Sandbox Cleanup**: Servers killed by process name (`pkill -f`) — no stale processes from wrong-PID bugs
-- ✅ **Accurate Log Capture**: Truncation limits raised so build/runtime errors are fully visible
+## How it works
 
----
-
-## 🆕 Recent Updates
-
-### Reliability & Safety Hardening (July 2026)
-
-**Stack-Aware Code Generation**
-- The developer prompt now injects stack-specific skill blocks based on the app spec, so React/Vite requests get frontend design guidance, FastAPI requests get backend API guidance, and plain Python requests get simpler script guidance.
-- Frontend guidance emphasizes Tailwind CSS, responsive layout, semantic structure, accessibility, loading states, and modern component primitives.
-- Backend guidance emphasizes FastAPI structure, validation, structured errors, async handlers, and environment-based secrets.
-
-**LLM & Node Robustness**
-- All agent nodes (`pm_node`, `design_questions_node`, `developer_node`) now wrap `model()` calls in `try/except RuntimeError` — an LLM outage no longer crashes the entire pipeline.
-- JSON extraction in `developer_node` now uses `json.JSONDecoder().raw_decode()` instead of a greedy `re.search(r'\{.*\}')` regex, so embedded JSON objects with trailing text are parsed correctly.
-- Prompt now explicitly permits a ` ```json ``` ` fence (which is stripped automatically) instead of saying "No markdown fences" while the code secretly strips them.
-
-**Sandbox Execution**
-- `npm run build` timeout raised from 180 s → 600 s, preventing false-fail on large React projects.
-- `_wait_for_port()` now logs each failed poll attempt instead of silently swallowing exceptions.
-- All background server processes (`uvicorn`, `manage.py runserver`, `npx serve`) are now killed with `pkill -f <name>` rather than `kill $!`, which previously captured the shell PID instead of the actual server PID.
-- Log truncation limits increased (800 → 3 000 chars for build/install output; 500 → 2 000 chars for Django migrations) so the root cause of failures is visible in logs.
-- Vite detection no longer false-positives on `"vite"` appearing in the package `name` or `description` field — it now only checks `dependencies` / `devDependencies`.
-
-**UI & Thread Safety**
-- `_reset()` now calls `executor.shutdown(wait=False)` before discarding the `ThreadPoolExecutor`, preventing thread accumulation across pipeline runs.
-- The running-phase polling interval reduced from 2 s → 0.5 s, cutting idle CPU usage without affecting responsiveness.
-- `_get_graph_interrupt()` access to `task.interrupts[0]` is now guarded with `try/except IndexError` to handle the race condition where a background thread consumes the interrupt between the truthiness check and the index access.
-- All user-facing text inputs now enforce maximum character limits (`app_idea`: 2 000; runtime inputs: 500; rejection reason: 500) to prevent oversized payloads from reaching generated files.
-
-**Build-Decision MCQ Phase (August 2026)**
-- Replaced the old `input_collector_node` that asked users for *example runtime values* (e.g., "Enter first number") purely to seed test data.
-- New `design_questions_node` runs after the PM writes the spec and asks up to **5 single-choice MCQ questions** about decisions that materially affect the build:
-  - Feature scope (e.g., "Should include authentication?")
-  - Design trade-offs (e.g., "Monolithic or microservices?")
-  - Technology/architecture choices (e.g., "Which UI framework?")
-- User selects options via radio buttons (Streamlit) or numbered choices (CLI) — never free-text input.
-- MCQ answers are folded into the Developer prompt as design constraints to honor.
-- Developer now always self-generates reasonable runtime defaults for tests; users no longer provide example data.
-- Validation caps question list at 5; truncates malformed entries; rejects questions with <2 or >6 options; safe-identifier checking on question IDs.
-
-**Previous Updates**
-- Added safer LLM prompt handling so user ideas, specifications, logs, and runtime inputs are treated as data instead of instructions.
-- Replaced the previous provider fallback chain with the direct Google GenAI interactions API using Gemini 3.7 Flash.
-- Updated React/Vite generation and sandbox install behavior so generated apps install `vite` and `@vitejs/plugin-react` reliably before build.
-
----
-
-## 🏗️ Architecture & Workflow
-
-This platform leverages LangGraph's state machine to handle complex cyclic dependencies, error recovery, and execution states.
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                  User Input: App Idea                            │
-└────────────────────────┬─────────────────────────────────────────┘
-                         │
-                         ▼
-          ┌──────────────────────────────┐
-          │   📋 PM Agent                 │ ◄─── Analyze Requirements
-          │    (Specifications)           │      Create Architecture
-          └────────────┬──────────────────┘
-                       │
-                       ▼
-          ┌──────────────────────────────┐
-          │   🧭 Design Questions Node   │ ◄─── Ask MCQ Build Decisions
-          │    (Single-Choice MCQ)        │      Scope, Features, Design
-          └────────────┬──────────────────┘
-                       │
-                       ▼
-    ┌────►│   💻 Dev Agent               │ ◄─── Write Code Files
-    │     │    (Implementation)           │      Honor Design Choices
-    │     │    (Self-Generate Defaults)   │
-    │     └────────────┬──────────────────┘
-    │                  │
-    │                  ▼
-    │     ┌──────────────────────────────┐
-    │     │   🧪 Tester Agent            │ ◄─── Run Tests
-    │     │    (Verification Gate)        │      Sandbox Execution
-    │     └────────────┬──────────────────┘
-    │                  │
-    │           [Tests Pass/Fail?]
-    │            /             \
-    │  (FAIL)   /               \   (PASS)
-    └──────────                  ▼
-                    ┌──────────────────────────────┐
-                    │   👤 Human Review Node       │ ◄─── Final Approval
-                    │    (Sign-off & Edits)        │      User Feedback
-                    └────────────┬─────────────────┘
-                                 │
-                                 ▼
-                    ┌──────────────────────────────┐
-                    │  📦 Zipped Deliverable       │
-                    └──────────────────────────────┘
+```mermaid
+flowchart TD
+    A[App idea] --> B[PM agent: write specification]
+    B --> C[Design questions: up to 5 MCQs]
+    C --> D[Developer agent: generate files]
+    D --> E[Tester agent: run in E2B sandbox]
+    E --> F{Errors in logs and iterations < 5?}
+    F -- yes --> D
+    F -- no --> G[Human review]
+    G -- reject with feedback --> D
+    G -- approve --> H[Zipped deliverable]
 ```
 
-### 🤖 The Five Specialized Agents
+| Agent | Responsibility |
+|-------|----------------|
+| PM | Turns the idea into a specification and file plan. |
+| Design questions | Asks up to 5 single-choice questions (2 to 6 options each) about material decisions. Answers are passed to the developer. |
+| Developer | Writes the project files, including a Dockerfile and `docker-compose.yml` where applicable. Fixes issues from test logs and human feedback. |
+| Tester | Detects the stack, installs dependencies, starts servers or runs scripts and builds in an E2B sandbox, and captures logs. |
+| Human review | Pauses the graph until a reviewer approves or rejects the output. |
 
-| Agent | Role | Responsibilities |
-|-------|------|------------------|
-| **PM Agent** | Product Manager | Analyzes vague requirements • Creates detailed `specifications.md` • Plans file structure & architecture |
-| **Design Questions Node** | Design Gatekeeper | Analyzes spec to identify impactful build decisions • Generates up to 5 single-choice MCQ questions • Collects user choices on scope, features, design • Interrupts UI to present radio-button/numbered choices |
-| **Dev Agent** | Developer | Writes clean, modular code • Honors design decisions from MCQ answers • Self-generates reasonable runtime defaults • Implements fixes from test failures • Self-corrects based on feedback |
-| **Tester Agent** | QA/Gatekeeper | Spins up isolated E2B sandbox • Creates Python virtual environments • Installs dependencies • Captures stdout/stderr • Reports failures |
-| **Human Node** | Stakeholder | Reviews generated code • Approves or requests changes • Uses LangGraph's `interrupt_before` for explicit sign-off |
+The graph is defined in [agency/graph.py](agency/graph.py). Routing after the tester uses keyword matching on the test logs (for example `Error`, `FAILED`, `ModuleNotFoundError`, `npm ERR`). Any match loops back to the developer while the iteration count is below 5.
 
----
+## Requirements
 
-## 🛠️ Tech Stack: Zero-Cost, Production-Grade
+- Python 3.10 or later. The project pins Python 3.12 in `.python-version`.
+- [uv](https://docs.astral.sh/uv/) for dependency management.
+- A Google Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
+- An E2B API key from [e2b.dev](https://e2b.dev).
+- Optional: a LangSmith API key for tracing.
 
-Built entirely on free developer tiers—no credit card required.
+All of these services offer free tiers with quotas. Check each provider's current limits before relying on them.
 
-| Component | Technology | Free Tier | Purpose |
-|-----------|-----------|-----------|---------|
-| **Orchestration** | LangGraph + LangChain Core | Open-source | State machine workflow, routing, conditional logic |
-| **LLM Brain** | Google Gemini 3.7 Flash | Google AI plan | Code generation, analysis, and error fixing |
-| **Code Execution** | E2B Sandbox | 100 hrs/month | Isolated, secure code execution environment |
-| **Observability** | LangSmith | 5,000 traces/month | Debugging, performance monitoring, tracing |
-| **Frontend UI** | Streamlit | Free | Interactive web interface, real-time updates |
-| **Language** | Python 3.10+ | Open-source | Primary implementation language |
-
----
-
-## 📂 Project Structure
-
-```
-automaton-boardroom/
-│
-├── README.md                   # This file
-├── .env                        # API keys (Gemini, E2B, LangSmith) — NOT committed
-├── .env.example                # Example environment variables template
-├── pyproject.toml              # Project config & dependencies (uv)
-├── uv.lock                     # Locked dependency versions (auto-generated)
-├── app.py                      # Streamlit UI entry point
-├── main.py                     # CLI entry point
-│
-├── agency/                     # Core LangGraph package
-│   ├── __init__.py
-│   ├── states.py              # TypedDict state machine definition
-│   ├── guards.py              # Prompt-injection guard & untrusted-JSON validation
-│   ├── sandbox_runners.py     # E2B sandbox orchestration per stack (FastAPI/Django/React/full-stack)
-│   ├── nodes.py               # Agent node implementations (PM, Dev, Tester, Human)
-│   └── graph.py               # Node routing & conditional loops
-│
-├── tests/                      # Unit test suite (pytest)
-└── scripts/                     # Manual/integration smoke-test scripts
-```
-
----
-
-## 📦 Dependencies
-
-All dependencies are managed with `uv` and specified in `pyproject.toml`:
-
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `langgraph` | ^0.1.0 | State machine orchestration & workflow |
-| `langchain` | ^0.2.0 | LLM framework core utilities |
-| `google-genai` | ^1.75.0 | Direct Google Gemini API client |
-| `langsmith` | ^0.1.0 | Tracing, debugging, & monitoring |
-| `e2b` | ^1.0.0 | Secure sandbox code execution |
-| `streamlit` | ^1.28.0 | Web UI framework |
-| `pydantic` | ^2.0.0 | Data validation & settings |
-| `python-dotenv` | ^1.0.0 | Environment variable management |
-| `tenacity` | ^8.2.0 | Retry logic for API calls |
-| `aiohttp` | ^3.9.0 | Async HTTP client |
-| `typing-extensions` | ^4.8.0 | Extended type hints |
-
----
-
-## 🚀 About `uv` Package Manager
-
-This project uses **[uv](https://docs.astral.sh/uv/)** for dependency management. `uv` is a blazingly fast Python package installer & resolver written in Rust.
-
-### Why uv?
-- ⚡ **10-100x faster** than pip
-- 🔒 **Deterministic builds** with `uv.lock` file
-- 📦 **Complete Python environment management** (venv + packages)
-- 🎯 **Simpler commands** (one tool, not pip + venv)
-- 🔄 **Lock file by default** for reproducible environments
-
-### Installation
+## Installation
 
 ```bash
-# macOS/Linux using pip
-pip install uv
-
-# macOS using Homebrew
-brew install uv
-
-# Windows (via pip)
-pip install uv
-
-# Or download from: https://docs.astral.sh/uv/
-```
-
----
-
-## ⚙️ Quick Start
-
-### Prerequisites
-- **Python 3.10+** (required for TypedDict)
-- **uv** package manager ([install here](https://docs.astral.sh/uv/))
-- Free API keys (created in Step 2)
-
-### 1️⃣ Clone & Set Up Environment
-
-```bash
-# Clone repository
 git clone https://github.com/prashant33/automaton-boardroom.git
 cd automaton-boardroom
 
-# Create & activate virtual environment with uv
-uv venv
-
-# Activate venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies via uv
 uv sync
 ```
 
-**Or in one command:**
-```bash
-uv sync --python 3.11
-```
+`uv sync` creates `.venv/` and installs the locked dependencies from `uv.lock`.
 
----
+## Configuration
 
-### 2️⃣ Get Free API Keys (2 minutes)
-
-**Google Gemini API:**
-1. Go to [Google AI Studio](https://aistudio.google.com/apikey)
-2. Click "Get API Key" → "Create API Key in new project"
-3. Copy your API key
-
-**E2B (Sandbox):**
-1. Go to [E2B Dashboard](https://e2b.dev)
-2. Sign up (free) → Navigate to API Keys
-3. Generate and copy your API key
-
-**LangSmith (Optional - for tracing):**
-1. Go to [LangSmith](https://smith.langchain.com)
-2. Sign up → Organization settings → API Keys
-3. Create and copy your API key
-
-### 3️⃣ Configure Environment Variables
-
-Create a `.env` file in the root directory (copy from `.env.example`):
-
-```env
-# LLM Provider Configuration
-GOOGLE_API_KEY="your_gemini_api_key_here"
-
-# Secure VM Code Interpreter Sandboxing
-E2B_API_KEY="your_e2b_api_key_here"
-
-# Visual Production Tracing & Monitoring (Optional)
-LANGCHAIN_TRACING_V2="true"
-LANGCHAIN_API_KEY="your_langsmith_api_key_here"
-LANGCHAIN_PROJECT="automaton-boardroom"
-```
-
-⚠️ **Never commit `.env` to version control!** It contains sensitive API keys.
-
-### 4️⃣ Run the Application
+Copy the template and fill in your keys:
 
 ```bash
-# Make sure venv is activated
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+cp .env.example .env
+```
 
-# Launch Streamlit app
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GOOGLE_API_KEY` | Yes | Gemini API key. Used when no per-session key is entered in the UI. |
+| `GEMINI_MODEL` | No | Model name. Defaults to `gemini-3.6-flash`. |
+| `E2B_API_KEY` | Yes | E2B sandbox API key. |
+| `LANGCHAIN_TRACING_V2` | No | Set to `true` to enable LangSmith tracing. |
+| `LANGCHAIN_API_KEY` | No | LangSmith API key, required when tracing is enabled. |
+| `LANGCHAIN_PROJECT` | No | LangSmith project name for grouping traces. |
+
+Never commit `.env`. It is listed in `.gitignore`.
+
+In the Streamlit UI, users can also enter their own Gemini key in the sidebar. The key is kept in the browser session only, is not written to disk or to `os.environ`, and is removed when the user clicks **Remove key**. When no session key is set, the server's `GOOGLE_API_KEY` is used.
+
+## Running the app
+
+### Web UI
+
+```bash
 uv run streamlit run app.py
 ```
 
-Open your browser to `http://localhost:8501`
+Open `http://localhost:8501`. To use another port:
 
----
+```bash
+uv run streamlit run app.py --server.port 8502
+```
 
-## Free public hosting (Streamlit Community Cloud)
+### Command line
 
-For a personal demo or portfolio, the simplest completely free option is
-[Streamlit Community Cloud](https://share.streamlit.io/). It runs this repository's
-existing `app.py` entrypoint and does not require a separate server or Docker image.
+```bash
+uv run python main.py
+```
 
-### Deploy
+The CLI prompts for an app idea, asks each design question in the terminal, and prints the generated code and test logs for approval.
 
-1. Push the repository to GitHub. Keep `.env` local; it is ignored by Git.
-2. Sign in to Streamlit Community Cloud with GitHub and select **Create app**.
-3. Select this repository, the `main` branch, and set **Main file path** to `app.py`.
-4. Select Python `3.12` to match `.python-version`. The cloud builder uses the
-   repository's `pyproject.toml`/`uv.lock` dependency metadata.
-5. Before launching, open **Advanced settings → Secrets** and add:
+## Deployment
+
+The app can be deployed to [Streamlit Community Cloud](https://share.streamlit.io/) without a separate server.
+
+1. Push the repository to GitHub. Keep `.env` local.
+2. In Streamlit Community Cloud, select **Create app**, choose this repository and the `main` branch, and set the main file path to `app.py`.
+3. Under **Advanced settings**, choose Python 3.12 and add the secrets in TOML format:
 
    ```toml
    GOOGLE_API_KEY = "your_gemini_api_key"
    GEMINI_MODEL = "gemini-3.6-flash"
    E2B_API_KEY = "your_e2b_api_key"
 
-   # Optional LangSmith tracing
+   # Optional
    LANGCHAIN_TRACING_V2 = "false"
    LANGCHAIN_API_KEY = "your_langsmith_api_key"
    LANGCHAIN_PROJECT = "automaton-boardroom"
    ```
 
-   At startup, `app.py` mirrors these top-level Streamlit secrets into the
-   environment so the hosted app uses the same names as the local `.env` setup.
-   Do not paste API keys into source files, chat messages, screenshots, or
-   committed files.
-6. Click **Deploy** and wait for the dependency installation and first startup.
-   The generated public URL can be shared directly.
+`app.py` copies top-level secrets into the environment at startup, so hosted and local configuration use the same variable names.
 
-### Verify and maintain the demo
+Restart the app after changing secrets.
 
-- Open the public URL, enter a small app idea, and confirm the workflow reaches
-  the design-question or human-review step.
-- Check the app logs if startup fails. Missing `GOOGLE_API_KEY` or `E2B_API_KEY`,
-  dependency installation errors, and exhausted Gemini/E2B quotas are the most
-  likely causes.
-- Use **Manage app → Settings → Secrets** to rotate or remove a credential.
-  Restart the app after changing secrets.
-- Streamlit Community Cloud may sleep inactive apps, and Gemini/E2B free-tier
-  quotas are independent of the hosting service.
+### Hosting limitations
 
-### Demo limitations
+The workflow state is held by LangGraph's in-memory `MemorySaver`. Active runs are lost when the process restarts and are not shared between instances or users. Multi-user production hosting would need a persistent checkpointer, authentication, rate limiting, and monitoring.
 
-This deployment is suitable for a public demonstration, not a production
-multi-user service. The workflow uses LangGraph's in-memory `MemorySaver`, so
-active state is lost when the process restarts and is not shared between
-instances or users. Production hosting would additionally need a persistent
-checkpointer/database, authentication, rate limiting, durable job handling, and
-monitoring.
-
-## � Development Setup
-
-### Install Development Dependencies
-
-```bash
-# Install all dependencies including dev tools
-uv sync --all-extras
-
-# Or add specific dev dependencies
-uv add --dev pytest pytest-asyncio pytest-cov ruff black isort mypy
-```
-
-### Common Development Tasks
-
-```bash
-# Run tests
-uv run pytest
-
-# Run tests with coverage
-uv run pytest --cov=agency
-
-# Format code with black
-uv run black .
-
-# Sort imports with isort
-uv run isort .
-
-# Lint with ruff
-uv run ruff check .
-
-# Type check with mypy
-uv run mypy agency/
-
-# Run all code quality checks
-uv run black . && uv run isort . && uv run ruff check . && uv run mypy agency/
-```
-
-### Project Structure for Development
+## Project structure
 
 ```
 automaton-boardroom/
-├── agency/                     # Main package
-│   ├── __init__.py
-│   ├── states.py              # State machine definition
-│   ├── guards.py               # Prompt-injection guard & untrusted-JSON validation
-│   ├── sandbox_runners.py      # E2B sandbox orchestration per stack
-│   ├── nodes.py                # Agent node implementations
-│   └── graph.py                # LangGraph workflow
-├── tests/                      # Test suite
-│   ├── __init__.py
-│   ├── test_sanitize.py
-│   ├── test_router.py
-│   └── test_design_questions.py
-├── scripts/                     # Manual/integration smoke-test scripts
-│   └── manual_smoke_test_react.py
-├── app.py                      # Streamlit entry point
-├── pyproject.toml              # Project config with uv
-├── uv.lock                     # Dependency lock file
-└── .env.example                # Environment template
+├── app.py                      # Streamlit UI entry point
+├── main.py                     # Command-line entry point
+├── agency/
+│   ├── graph.py                # LangGraph workflow, routing, and checkpointer
+│   ├── nodes.py                # PM, design questions, developer, tester, and human nodes; Gemini client wrapper
+│   ├── sandbox_runners.py      # E2B execution for Python, FastAPI, Django, React, and full-stack projects
+│   ├── guards.py               # Prompt-injection sanitization and design-question validation
+│   └── states.py               # Shared AgencyState definition
+├── scripts/
+│   └── manual_smoke_test_react.py   # Manual end-to-end check for the React pipeline
+├── tests/                      # Pytest unit tests
+├── pyproject.toml              # Project metadata, dependencies, and tool configuration
+├── uv.lock                     # Locked dependency versions
+├── .python-version             # Python version used for development and deployment
+└── .env.example                # Environment variable template
 ```
 
----
+## Development
 
-### Example 1: Build a Todo CLI App
-```
-User Input: "Create a Python CLI todo app with add, list, and delete commands. Store data in JSON."
-
-System Flow:
-1. PM Agent → Creates spec with CLI design, data schema, error handling
-2. Design Questions → Asks MCQ: "Support persistent storage?" / "Add priority levels?"
-3. Dev Agent → Writes main.py, todos.json handler, argument parser; honors MCQ choices
-4. Tester Agent → Spins up sandbox, tests add/list/delete functionality
-5. Human Node → Reviews code, approves → Deliverable ready
-```
-
-### Example 2: API with Self-Correction
-```
-User Input: "Build a Flask API that fetches weather data from OpenWeatherMap"
-
-System Flow:
-1. PM Agent → Defines endpoints, authentication flow, error handling
-2. Design Questions → Asks MCQ: "Include caching?" / "Rate limiting needed?"
-3. Dev Agent → Writes Flask app with API integration; honors MCQ choices
-4. Tester Agent → Tests endpoints, discovers missing env var handling
-5. Dev Agent (Loop) → Automatically fixes missing error handling
-6. Tester Agent → Re-runs tests, all pass ✅
-7. Human Node → Reviews improved code, approves
-```
-
----
-
-## 🔍 How Self-Correction Works
-
-1. **Tester Agent runs code** → Detects error (e.g., `ImportError: No module named 'numpy'`)
-2. **Error logged to state** → Includes full traceback and context
-3. **Dev Agent receives error** → Analyzes failure, updates code
-4. **Loop back to Tester** → Re-runs tests automatically
-5. **Success or new error** → Continue loop or escalate to human
-6. **Max retries reached** → Human review for complex issues
-
-### Error Recovery Loop Configuration
-
-```python
-# In graph.py
-MAX_RETRIES = 5  # Max self-correction attempts
-TIMEOUT_SECONDS = 300  # Timeout per test run
-SANDBOX_RAM_MB = 512  # E2B sandbox memory allocation
-```
-
----
-
-## 🚨 Troubleshooting
-
-### Common Issues
-
-| Issue | Solution |
-|-------|----------|
-| `uv: command not found` | Install uv: `pip install uv` or follow [uv installation](https://docs.astral.sh/uv/#installation) |
-| `GOOGLE_API_KEY not found` | Verify `.env` file exists in root directory with correct key format |
-| `E2B_API_KEY invalid` | Check key hasn't expired; regenerate at [e2b.dev](https://e2b.dev) |
-| `Streamlit port 8501 already in use` | `uv run streamlit run app.py -- --server.port 8502` |
-| `ModuleNotFoundError: No module named 'langgraph'` | Run `uv sync` to install all dependencies |
-| `LangSmith not connecting` | Set `LANGCHAIN_TRACING_V2=false` or check API key validity |
-| `E2B sandbox quota exceeded` | Check usage at E2B dashboard; free tier = 100 hrs/month |
-| `sh: vite: not found` during React build | Re-run generation; Vite detection now only checks `dependencies`/`devDependencies`, and `vite` + `@vitejs/plugin-react` are always included |
-| `npm run build` times out | Build timeout is now 600 s; if your project consistently exceeds this, consider breaking it into smaller modules |
-| Pipeline reports `RuntimeError: Gemini failed` | Check that `GOOGLE_API_KEY` in `.env` is valid and your Google AI plan has remaining quota |
-
-### Useful uv Commands
+Install the development extras:
 
 ```bash
-# Sync dependencies (install/update)
-uv sync
-
-# Add a new dependency
-uv add package-name
-
-# Add dev dependency
-uv add --dev pytest
-
-# Update all dependencies
-uv sync --upgrade
-
-# Run a script
-uv run python script.py
-
-# Run with specific Python version
-uv sync --python 3.11
-
-# List installed packages
-uv pip list
-
-# Create fresh environment
-uv venv --clean
+uv sync --extra dev
 ```
 
----
+Common commands:
 
-## 📊 Cost Analysis
+```bash
+# Run the test suite (coverage is enabled by default in pyproject.toml)
+uv run pytest
 
-| Resource | Tier | Monthly Limit | Typical Usage |
-|----------|------|---------------|---------------|
-| Google Gemini API | Free | 1,500 requests | 5-10 small projects |
-| E2B Compute | Free | 100 hours | ~2-3 projects/month |
-| LangSmith Traces | Free | 5,000 traces | Most projects |
-| **Total Cost** | **Free** | **Unlimited Projects** | **$0/month** |
+# Lint, format, and type-check
+uv run ruff check .
+uv run black .
+uv run isort .
+uv run mypy agency/
+```
 
----
+The unit tests replace the Gemini client and LangGraph interrupts with fakes, so they do not make network calls.
 
-## 🎯 Use Cases
+## Troubleshooting
 
-- **Rapid Prototyping**: Turn ideas into working code in minutes
-- **Learning Tool**: Understand LangGraph and multi-agent patterns
-- **Code Review**: Let AI agents review before human sign-off
-- **Automation Framework**: Build on top for specialized workflows
-- **Education**: Teach students about AI-assisted development
-- **Proof-of-Concept**: Validate ideas before engineering investment
+| Symptom | Resolution |
+|---------|------------|
+| `uv: command not found` | Install uv from [docs.astral.sh/uv](https://docs.astral.sh/uv/#installation). |
+| `ModuleNotFoundError` for a project dependency | Run `uv sync` from the repository root. |
+| Port 8501 already in use | Start on another port: `uv run streamlit run app.py --server.port 8502`. |
+| `GOOGLE_API_KEY` not set | Add it to `.env`, or enter a key in the sidebar of the UI. |
+| `Gemini quota exceeded` | The Gemini key has hit a per-minute or per-day limit. Wait, switch `GEMINI_MODEL`, or use a different key. |
+| `Gemini failed: ...` | Check the key, the model name, and network access. The error is shown in the UI. |
+| E2B authentication or quota error | Verify `E2B_API_KEY` and check the usage dashboard at e2b.dev. |
+| `npm run build` fails with a timeout | The React build step has a 600-second limit. Reduce the project size or dependencies. |
+| No traces appear in LangSmith | Set `LANGCHAIN_TRACING_V2=true` and provide a valid `LANGCHAIN_API_KEY`. |
 
----
+## Limitations
 
-## 📈 Observability & Tracing
+- Generated projects are tested for startup and build success and for errors in the logs. They are not verified against the full specification.
+- Self-correction is capped at 5 developer iterations. Problems that remain after that go to human review.
+- Routing relies on keyword matching in the test logs, so a false positive or a missed error can change the routing.
+- Workflow state is in memory and is lost when the process restarts.
 
-This system integrates with **LangSmith** for full transparency. Every run provides:
+## Contributing
 
-- **State mutations**: Before/after snapshots at each node
-- **Latency profiles**: Sub-millisecond timing for E2B initialization
-- **Self-correction loops**: Visual trace of Dev Agent error fixes
-- **Token usage**: Cost tracking and optimization insights
-- **Error logs**: Complete traceback capture for debugging
+Issues and pull requests are welcome. Before opening a pull request, run `uv run pytest` and the lint commands above, and keep changes focused on a single concern.
 
-View live traces at [LangSmith Dashboard](https://smith.langchain.com)
+## License
 
----
-
-## 🤝 Contributing
-
-Contributions welcome! Areas for improvement:
-
-- [ ] Support for compiled languages (Go, Rust, Java)
-- [ ] GPU-accelerated sandboxes via E2B
-- [ ] Docker containerization for easy deployment
-- [ ] Database migration support
-- [ ] Frontend framework scaffolding (React, Vue, Next.js)
-- [ ] CI/CD pipeline integration templates
-- [ ] Advanced error recovery strategies
-- [ ] Cost optimization for E2B usage
-
----
-
-## 📝 License
-
-Distributed under the MIT License. See LICENSE for more information.
-
----
-
-## 🙋 Support & Questions
-
-- **Documentation**: Check the `docs/` folder (coming soon)
-- **Issues**: GitHub Issues for bug reports
-- **Discussions**: GitHub Discussions for feature requests
-- **Community**: Join our Discord community (link TBD)
-
----
-
-## 📚 Additional Resources
-
-- [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
-- [E2B Sandbox Documentation](https://e2b.dev/docs)
-- [LangSmith Documentation](https://smith.langchain.com/docs)
-- [Google Gemini API Guide](https://ai.google.dev)
-- [Streamlit Documentation](https://docs.streamlit.io)
-
----
-
-**Built with ❤️ using LangGraph, LangSmith & E2B**
-
-*Last Updated: July 2026*
-
-
-To run graph:
- python -c "from agency.graph import get_mermaid_png_bytes; from io import BytesIO; from PIL import Image; Image.open(BytesIO(get_mermaid_png_bytes())).show()"
-
-*Last Updated: July 2026*
+Distributed under the MIT License, as declared in `pyproject.toml`.
