@@ -1,11 +1,14 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import getpass
 import uuid
 from langgraph.types import Command
 from agency.graph import app
+from agency.usage import set_usage_user
 
 def main():
+    set_usage_user(f"cli-{getpass.getuser()}")
     app_idea = input("What app do you want to build? ").strip()
     if not app_idea:
         app_idea = "Create a python code that adds two numbers"

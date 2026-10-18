@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import traceback
 
 from .states import AgencyState
+from .usage import check_limit, record_usage
 from .guards import _sanitize, validate_design_questions
 from .sandbox_runners import (
     _run_fastapi,
@@ -21,9 +22,7 @@ from .sandbox_runners import (
 # Load environment variables from .env file
 load_dotenv()
 
-from google import genai
-
-
+import openai
 
 from e2b import Sandbox
 from langgraph.types import interrupt
@@ -35,7 +34,7 @@ _request_api_key: ContextVar[str | None] = ContextVar("request_api_key", default
 
 
 def set_request_api_key(api_key: str | None):
-    """Scope a user-supplied Gemini key to the current context; returns a reset token."""
+    """Scope a user-supplied OpenAI key to the current context; returns a reset token."""
     return _request_api_key.set((api_key or "").strip() or None)
 
 
@@ -43,33 +42,67 @@ def reset_request_api_key(token) -> None:
     _request_api_key.reset(token)
 
 
+DEFAULT_OPENAI_MODEL = "gpt-6-luna"
+
+
 def model(prompt, temperature=0.3):
+    model_name = os.getenv("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
     try:
-        api_key = _request_api_key.get() or os.getenv("GOOGLE_API_KEY")
-        client = genai.Client(api_key=api_key)
-        response = client.interactions.create(
-            model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
-            input=prompt,
+        user_key = _request_api_key.get()
+        api_key = user_key or os.getenv("OPENAI_API_KEY")
+        # Users bringing their own key pay for it themselves, so only the server key is metered.
+        metered = not user_key
+        if metered:
+            check_limit()
+        if not api_key:
+            raise RuntimeError(
+                "OpenAI API key not set. Add OPENAI_API_KEY to .env or enter a key in the sidebar."
+            )
+        client = openai.OpenAI(
+            api_key=api_key,
+            timeout=float(os.getenv("OPENAI_TIMEOUT", "300")),
+            max_retries=int(os.getenv("OPENAI_MAX_RETRIES", "3")),
         )
+        request = {"model": model_name, "input": prompt, "temperature": temperature}
+        try:
+            response = client.responses.create(**request)
+        except openai.BadRequestError as bad_request:
+            # Some models (e.g. reasoning models) reject sampling parameters.
+            if "temperature" not in str(bad_request).lower():
+                raise
+            request.pop("temperature")
+            response = client.responses.create(**request)
 
         content = getattr(response, "output_text", None)
-        if content is None:
-            outputs = getattr(response, "outputs", [])
-            if not outputs or not getattr(outputs[0], "text", None):
-                raise ValueError("Gemini returned no text output")
-            content = outputs[0].text
+        if not content:
+            raise ValueError("OpenAI returned no text output")
+        if metered:
+            usage = getattr(response, "usage", None)
+            input_tokens = getattr(usage, "input_tokens", None)
+            output_tokens = getattr(usage, "output_tokens", None)
+            if input_tokens is None or output_tokens is None:
+                # Conservative estimate (~4 chars/token) when the API omits usage.
+                input_tokens, output_tokens = len(str(prompt)) // 4, len(content) // 4
+            record_usage(input_tokens, output_tokens)
         return SimpleNamespace(content=content)
 
-    except Exception as gemini_error:
-        error_text = str(gemini_error)
-        if "429" in error_text or "quota" in error_text.lower() or "too_many_requests" in error_text:
-            raise RuntimeError(
-                "Gemini quota exceeded. Wait for the retry interval or set GEMINI_MODEL "
-                "to another available model."
-            ) from gemini_error
-        raise RuntimeError(f"Gemini failed: {gemini_error}") from gemini_error
+    except RuntimeError:
+        raise
+    except openai.RateLimitError as e:
+        raise RuntimeError(
+            "OpenAI rate limit or quota exceeded. Wait and retry, check your billing/usage, "
+            "or set OPENAI_MODEL to another available model."
+        ) from e
+    except openai.AuthenticationError as e:
+        raise RuntimeError("OpenAI authentication failed. Check your API key.") from e
+    except openai.NotFoundError as e:
+        raise RuntimeError(
+            f"OpenAI model '{model_name}' not found or not accessible with this key. "
+            "Set OPENAI_MODEL to a model you have access to."
+        ) from e
+    except Exception as e:
+        raise RuntimeError(f"OpenAI failed: {e}") from e
 
-       
 
 @traceable
 def pm_node(state: AgencyState) -> Dict:

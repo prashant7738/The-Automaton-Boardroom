@@ -75,3 +75,6 @@ logs/
 
 # OS
 Thumbs.dbagency_graph.png
+
+# Usage ledger
+.usage/

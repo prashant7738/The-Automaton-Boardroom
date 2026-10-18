@@ -28,14 +28,14 @@ This document provides detailed information about all project dependencies and t
 - **Usage**: Foundation for agent implementations and LLM interactions
 - **Docs**: https://python.langchain.com/
 
-**google-genai** (^1.75.0)
-- **Purpose**: Direct Google Gemini API client
+**openai** (>=1.60.0)
+- **Purpose**: Official OpenAI API client
 - **Key Features**:
-  - Gemini interactions API
-  - Synchronous and asynchronous clients
-  - Text and multimodal generation
-- **Usage**: Direct LLM backbone for PM, Dev agents, and design questions
-- **Docs**: https://googleapis.github.io/python-genai/
+  - Responses API
+  - Built-in retries with backoff and timeouts
+  - Typed errors (rate limit, auth, etc.)
+- **Usage**: Direct LLM backbone (`gpt-6-luna`) for PM, Dev agents, and design questions
+- **Docs**: https://platform.openai.com/docs
 
 ### Observability & Tracing
 
@@ -103,7 +103,7 @@ This document provides detailed information about all project dependencies and t
   - Connection pooling
   - Request/response handling
   - SSL/TLS support
-- **Usage**: Async API calls to Gemini and E2B
+- **Usage**: Async API calls to OpenAI and E2B
 - **Alternative**: httpx (see below)
 
 **httpx** (^0.25.0)
@@ -124,7 +124,7 @@ This document provides detailed information about all project dependencies and t
   - Jitter support
   - Conditional retries
   - Timeout handling
-- **Usage**: Retry API calls to Gemini/E2B on failures
+- **Usage**: Retry API calls to OpenAI/E2B on failures
 - **Docs**: https://tenacity.readthedocs.io/
 
 ### Type Hints
@@ -198,7 +198,7 @@ Install with: `uv sync --all-extras` or `uv add --dev <package>`
 Orchestration Layer
 ├── langgraph (state machine)
 ├── langchain (abstractions)
-└── google-genai (Gemini API)
+└── openai (OpenAI API)
 
 Execution Layer
 ├── e2b (sandboxing)
@@ -298,7 +298,7 @@ These packages interact with external services that require free API keys:
 
 | Package | Service | Free Tier |
 |---------|---------|-----------|
-| google-genai | Google Gemini | Google AI plan |
+| openai | OpenAI | Paid API usage |
 | e2b | E2B Sandbox | 100 hrs/month |
 | langsmith | LangSmith | 5,000 traces/month |
 

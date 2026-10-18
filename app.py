@@ -11,6 +11,7 @@ from langgraph.types import Command
 
 from agency.graph import app as workflow
 from agency.nodes import reset_request_api_key, set_request_api_key
+from agency.usage import get_usage, reset_usage_user, set_usage_user
 
 load_dotenv()
 
@@ -92,6 +93,7 @@ _DEFAULTS = {
     "interrupt_payload": None,
     "activity_log": [],
     "idea_text": "",
+    "anonymous_user_id": None,
 }
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
@@ -108,11 +110,23 @@ def _log(msg: str) -> None:
 
 
 def _user_api_key() -> str:
-    return (st.session_state.get("gemini_api_key_input") or "").strip()
+    return (st.session_state.get("openai_api_key_input") or "").strip()
 
 
 def _clear_user_api_key() -> None:
-    st.session_state.gemini_api_key_input = ""
+    st.session_state.openai_api_key_input = ""
+
+
+def _usage_user_id() -> str:
+    """Stable identity for usage limits: the logged-in email, else a per-session anonymous id."""
+    try:
+        if st.user.is_logged_in and st.user.get("email"):
+            return str(st.user.get("email")).lower()
+    except Exception:
+        pass
+    if not st.session_state.anonymous_user_id:
+        st.session_state.anonymous_user_id = f"anon-{uuid.uuid4().hex}"
+    return st.session_state.anonymous_user_id
 
 
 def _get_graph_interrupt():
@@ -131,12 +145,14 @@ def _get_graph_interrupt():
     return None, False  # running but no interrupt surfaced yet
 
 
-def _call_with_user_key(api_key: str, fn, *args) -> None:
-    token = set_request_api_key(api_key)
+def _call_with_user_key(api_key: str, user_id: str, fn, *args) -> None:
+    key_token = set_request_api_key(api_key)
+    user_token = set_usage_user(user_id)
     try:
         fn(*args)
     finally:
-        reset_request_api_key(token)
+        reset_usage_user(user_token)
+        reset_request_api_key(key_token)
 
 
 def _submit_bg(fn, *args) -> None:
@@ -144,7 +160,7 @@ def _submit_bg(fn, *args) -> None:
     if st.session_state.executor is None:
         st.session_state.executor = ThreadPoolExecutor(max_workers=1)
     st.session_state.future = st.session_state.executor.submit(
-        _call_with_user_key, _user_api_key(), fn, *args
+        _call_with_user_key, _user_api_key(), _usage_user_id(), fn, *args
     )
 
 
@@ -197,10 +213,10 @@ with st.sidebar:
     st.divider()
 
     st.text_input(
-        "Your Gemini API key",
-        key="gemini_api_key_input",
+        "Your OpenAI API key",
+        key="openai_api_key_input",
         type="password",
-        placeholder="Paste key from aistudio.google.com",
+        placeholder="sk-... (from platform.openai.com)",
         help="Held in memory for this browser session only. Not written to disk or logs.",
     )
     if _user_api_key():
@@ -208,6 +224,11 @@ with st.sidebar:
         st.button("Remove key", on_click=_clear_user_api_key, use_container_width=True)
     else:
         st.caption("No key entered. The server key from .env is used.")
+        _usage = get_usage(_usage_user_id())
+        st.progress(
+            min(_usage["cost_usd"] / _usage["limit_usd"], 1.0) if _usage["limit_usd"] else 1.0,
+            text=f"Monthly credit: ${_usage['cost_usd']:.2f} / ${_usage['limit_usd']:.2f}",
+        )
     st.divider()
 
     # Pipeline stage indicator
@@ -269,7 +290,7 @@ if st.session_state.phase == "idle":
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Agents", "5", help="PM · Design Questions · Developer · Tester · Human Review")
-    c2.metric("LLM", "Gemini 3.7 Flash", help="Google Gemini API")
+    c2.metric("LLM", "GPT-6 Luna", help="OpenAI API")
     c3.metric("Execution", "E2B Sandbox", help="Isolated, secure code execution")
     c4.metric("Cost", "$0", help="Free developer tiers only")
 
@@ -564,9 +585,9 @@ elif st.session_state.phase == "error":
 
     st.markdown("**Common causes**")
     st.markdown(
-        "- Invalid or missing Gemini key (set it in the sidebar or your `.env` file)\n"
+        "- Invalid or missing OpenAI key (set it in the sidebar or your `.env` file)\n"
         "- E2B sandbox quota exhausted (100 hrs/month free tier)\n"
-        "- Groq / Gemini rate limit hit\n"
+        "- OpenAI rate limit or quota hit\n"
         "- Network timeout during sandbox execution"
     )
 

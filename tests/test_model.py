@@ -1,51 +1,61 @@
-from types import SimpleNamespace
-
+import httpx
+import openai
 import pytest
+from types import SimpleNamespace
 
 from agency import nodes
 
 
-def test_model_uses_gemini_interactions_and_preserves_content_contract(monkeypatch):
-    captured = {}
-
-    class FakeInteractions:
+def _install_fake_client(monkeypatch, create, clients=None):
+    class FakeResponses:
         def create(self, **kwargs):
-            captured.update(kwargs)
-            return SimpleNamespace(
-                outputs=[SimpleNamespace(text="Gemini response")]
-            )
+            return create(**kwargs)
 
     class FakeClient:
         def __init__(self, **kwargs):
-            captured["client"] = kwargs
-            self.interactions = FakeInteractions()
+            if clients is not None:
+                clients.append(kwargs)
+            self.responses = FakeResponses()
 
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    monkeypatch.setattr(nodes.genai, "Client", FakeClient)
+    monkeypatch.setattr(nodes.openai, "OpenAI", FakeClient)
+
+
+def _status_error(cls, status):
+    request = httpx.Request("POST", "https://api.openai.com/v1/responses")
+    response = httpx.Response(status, request=request)
+    return cls("boom", response=response, body=None)
+
+
+@pytest.fixture(autouse=True)
+def _clean_env(monkeypatch):
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+
+def test_model_uses_openai_responses_and_preserves_content_contract(monkeypatch):
+    captured, clients = {}, []
+
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(output_text="GPT response")
+
+    _install_fake_client(monkeypatch, create, clients)
 
     response = nodes.model("Explain AI", temperature=0.0)
 
-    assert response.content == "Gemini response"
-    assert captured["client"] == {"api_key": "test-key"}
-    assert captured["model"] == "gemini-3.6-flash"
+    assert response.content == "GPT response"
+    assert clients[0]["api_key"] == "test-key"
+    assert captured["model"] == "gpt-6-luna"
     assert captured["input"] == "Explain AI"
-    assert "generation_config" not in captured
+    assert captured["temperature"] == 0.0
 
 
 def test_model_prefers_request_api_key_over_server_env(monkeypatch):
     clients = []
-
-    class FakeInteractions:
-        def create(self, **kwargs):
-            return SimpleNamespace(output_text="Gemini response")
-
-    class FakeClient:
-        def __init__(self, **kwargs):
-            clients.append(kwargs)
-            self.interactions = FakeInteractions()
-
-    monkeypatch.setenv("GOOGLE_API_KEY", "server-key")
-    monkeypatch.setattr(nodes.genai, "Client", FakeClient)
+    monkeypatch.setenv("OPENAI_API_KEY", "server-key")
+    _install_fake_client(
+        monkeypatch, lambda **kw: SimpleNamespace(output_text="ok"), clients
+    )
 
     token = nodes.set_request_api_key("  user-key  ")
     try:
@@ -54,58 +64,78 @@ def test_model_prefers_request_api_key_over_server_env(monkeypatch):
         nodes.reset_request_api_key(token)
     nodes.model("Explain AI")
 
-    assert clients[0] == {"api_key": "user-key"}
-    assert clients[1] == {"api_key": "server-key"}
+    assert clients[0]["api_key"] == "user-key"
+    assert clients[1]["api_key"] == "server-key"
 
 
-def test_model_supports_output_text_response_shape(monkeypatch):
-    class FakeInteractions:
-        def create(self, **kwargs):
-            return SimpleNamespace(output_text="Gemini response")
-
-    class FakeClient:
-        def __init__(self, **kwargs):
-            self.interactions = FakeInteractions()
-
-    monkeypatch.setattr(nodes.genai, "Client", FakeClient)
-
-    assert nodes.model("Explain AI").content == "Gemini response"
-
-
-def test_model_uses_configured_gemini_model(monkeypatch):
+def test_model_uses_configured_model(monkeypatch):
     captured = {}
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-custom")
 
-    class FakeInteractions:
-        def create(self, **kwargs):
-            captured.update(kwargs)
-            return SimpleNamespace(output_text="Gemini response")
+    def create(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(output_text="ok")
 
-    class FakeClient:
-        def __init__(self, **kwargs):
-            self.interactions = FakeInteractions()
-
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash")
-    monkeypatch.setattr(nodes.genai, "Client", FakeClient)
-
+    _install_fake_client(monkeypatch, create)
     nodes.model("Explain AI")
 
-    assert captured["model"] == "gemini-2.5-flash"
+    assert captured["model"] == "gpt-custom"
 
 
-def test_model_raises_clear_error_when_gemini_fails(monkeypatch):
-    class FakeClient:
-        def __init__(self, **kwargs):
-            raise ValueError("invalid API key")
+def test_model_retries_without_temperature_when_unsupported(monkeypatch):
+    calls = []
 
-    monkeypatch.setattr(nodes.genai, "Client", FakeClient)
+    def create(**kwargs):
+        calls.append(kwargs)
+        if "temperature" in kwargs:
+            err = _status_error(openai.BadRequestError, 400)
+            err.args = ("Unsupported parameter: 'temperature'",)
+            raise err
+        return SimpleNamespace(output_text="ok")
 
-    with pytest.raises(RuntimeError, match="Gemini failed"):
+    _install_fake_client(monkeypatch, create)
+
+    assert nodes.model("Explain AI").content == "ok"
+    assert len(calls) == 2 and "temperature" not in calls[1]
+
+
+def test_model_raises_when_api_key_missing(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="OpenAI API key not set"):
+        nodes.model("Explain AI")
+
+
+def test_model_maps_rate_limit_error(monkeypatch):
+    def create(**kwargs):
+        raise _status_error(openai.RateLimitError, 429)
+
+    _install_fake_client(monkeypatch, create)
+
+    with pytest.raises(RuntimeError, match="rate limit or quota"):
+        nodes.model("Explain AI")
+
+
+def test_model_maps_authentication_error(monkeypatch):
+    def create(**kwargs):
+        raise _status_error(openai.AuthenticationError, 401)
+
+    _install_fake_client(monkeypatch, create)
+
+    with pytest.raises(RuntimeError, match="authentication failed"):
+        nodes.model("Explain AI")
+
+
+def test_model_raises_on_empty_output(monkeypatch):
+    _install_fake_client(monkeypatch, lambda **kw: SimpleNamespace(output_text=""))
+
+    with pytest.raises(RuntimeError, match="OpenAI failed"):
         nodes.model("Explain AI")
 
 
 def test_developer_node_surfaces_generation_failure(monkeypatch):
     def failed_model(prompt, temperature=0.3):
-        raise RuntimeError("Gemini quota exceeded")
+        raise RuntimeError("OpenAI quota exceeded")
 
     monkeypatch.setattr(nodes, "model", failed_model)
 

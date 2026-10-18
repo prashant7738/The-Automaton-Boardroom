@@ -54,11 +54,21 @@ flowchart TD
 
 The graph is defined in [agency/graph.py](agency/graph.py). Routing after the tester uses keyword matching on the test logs (for example `Error`, `FAILED`, `ModuleNotFoundError`, `npm ERR`). Any match loops back to the developer while the iteration count is below 5.
 
+## Usage limits
+
+Each user gets a monthly credit (default **$1.00**, resets at the start of each UTC month) on the server's OpenAI key. Spend is computed from the token counts the API returns and the configured per-token prices, and stored in a SQLite ledger (`USAGE_DB_PATH`). Before every LLM call the limit is checked; once reached, calls fail with `Monthly usage limit reached` until next month. The sidebar shows the current balance.
+
+- A user is identified by their Streamlit login email when [Streamlit authentication](https://docs.streamlit.io/develop/concepts/connections/authentication) is configured. Without login, each browser session gets an anonymous identity, so the limit can be bypassed by opening a new session. Enable authentication for a hard per-user limit.
+- Users who enter their own OpenAI key in the sidebar are not metered.
+- A request that starts under the limit can push spend slightly over it, because cost is known only after the response.
+- The default prices are placeholders. Set `OPENAI_INPUT_PRICE_PER_1M` and `OPENAI_OUTPUT_PRICE_PER_1M` to the real prices of your model.
+- Platforms with an ephemeral filesystem (such as Streamlit Community Cloud) lose the ledger on restart. Point `USAGE_DB_PATH` at persistent storage there.
+
 ## Requirements
 
 - Python 3.10 or later. The project pins Python 3.12 in `.python-version`.
 - [uv](https://docs.astral.sh/uv/) for dependency management.
-- A Google Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
+- An OpenAI API key from the [OpenAI platform](https://platform.openai.com/api-keys), with access to the `gpt-6-luna` model.
 - An E2B API key from [e2b.dev](https://e2b.dev).
 - Optional: a LangSmith API key for tracing.
 
@@ -85,8 +95,14 @@ cp .env.example .env
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GOOGLE_API_KEY` | Yes | Gemini API key. Used when no per-session key is entered in the UI. |
-| `GEMINI_MODEL` | No | Model name. Defaults to `gemini-3.6-flash`. |
+| `OPENAI_API_KEY` | Yes | OpenAI API key. Used when no per-session key is entered in the UI. |
+| `OPENAI_MODEL` | No | Model name. Defaults to `gpt-6-luna`. |
+| `OPENAI_TIMEOUT` | No | Request timeout in seconds. Defaults to `300`. |
+| `OPENAI_MAX_RETRIES` | No | SDK retries with backoff on 429/5xx. Defaults to `3`. |
+| `MONTHLY_USER_LIMIT_USD` | No | Monthly spend limit per user when the server key is used. Defaults to `1.00`. |
+| `OPENAI_INPUT_PRICE_PER_1M` | No | USD per 1M input tokens, used to compute spend. Defaults to `2.50`. Set to your model's real price. |
+| `OPENAI_OUTPUT_PRICE_PER_1M` | No | USD per 1M output tokens. Defaults to `10.00`. Set to your model's real price. |
+| `USAGE_DB_PATH` | No | SQLite file holding per-user monthly usage. Defaults to `.usage/usage.db`. |
 | `E2B_API_KEY` | Yes | E2B sandbox API key. |
 | `LANGCHAIN_TRACING_V2` | No | Set to `true` to enable LangSmith tracing. |
 | `LANGCHAIN_API_KEY` | No | LangSmith API key, required when tracing is enabled. |
@@ -94,7 +110,7 @@ cp .env.example .env
 
 Never commit `.env`. It is listed in `.gitignore`.
 
-In the Streamlit UI, users can also enter their own Gemini key in the sidebar. The key is kept in the browser session only, is not written to disk or to `os.environ`, and is removed when the user clicks **Remove key**. When no session key is set, the server's `GOOGLE_API_KEY` is used.
+In the Streamlit UI, users can also enter their own OpenAI key in the sidebar. The key is kept in the browser session only, is not written to disk or to `os.environ`, and is removed when the user clicks **Remove key**. When no session key is set, the server's `OPENAI_API_KEY` is used.
 
 ## Running the app
 
@@ -127,8 +143,8 @@ The app can be deployed to [Streamlit Community Cloud](https://share.streamlit.i
 3. Under **Advanced settings**, choose Python 3.12 and add the secrets in TOML format:
 
    ```toml
-   GOOGLE_API_KEY = "your_gemini_api_key"
-   GEMINI_MODEL = "gemini-3.6-flash"
+   OPENAI_API_KEY = "your_openai_api_key"
+   OPENAI_MODEL = "gpt-6-luna"
    E2B_API_KEY = "your_e2b_api_key"
 
    # Optional
@@ -153,8 +169,9 @@ automaton-boardroom/
 ├── main.py                     # Command-line entry point
 ├── agency/
 │   ├── graph.py                # LangGraph workflow, routing, and checkpointer
-│   ├── nodes.py                # PM, design questions, developer, tester, and human nodes; Gemini client wrapper
+│   ├── nodes.py                # PM, design questions, developer, tester, and human nodes; OpenAI client wrapper
 │   ├── sandbox_runners.py      # E2B execution for Python, FastAPI, Django, React, and full-stack projects
+│   ├── usage.py                # Per-user monthly spend tracking and limit enforcement
 │   ├── guards.py               # Prompt-injection sanitization and design-question validation
 │   └── states.py               # Shared AgencyState definition
 ├── scripts/
@@ -187,7 +204,7 @@ uv run isort .
 uv run mypy agency/
 ```
 
-The unit tests replace the Gemini client and LangGraph interrupts with fakes, so they do not make network calls.
+The unit tests replace the OpenAI client and LangGraph interrupts with fakes, so they do not make network calls.
 
 ## Troubleshooting
 
@@ -196,9 +213,10 @@ The unit tests replace the Gemini client and LangGraph interrupts with fakes, so
 | `uv: command not found` | Install uv from [docs.astral.sh/uv](https://docs.astral.sh/uv/#installation). |
 | `ModuleNotFoundError` for a project dependency | Run `uv sync` from the repository root. |
 | Port 8501 already in use | Start on another port: `uv run streamlit run app.py --server.port 8502`. |
-| `GOOGLE_API_KEY` not set | Add it to `.env`, or enter a key in the sidebar of the UI. |
-| `Gemini quota exceeded` | The Gemini key has hit a per-minute or per-day limit. Wait, switch `GEMINI_MODEL`, or use a different key. |
-| `Gemini failed: ...` | Check the key, the model name, and network access. The error is shown in the UI. |
+| `OpenAI API key not set` | Add it to `.env`, or enter a key in the sidebar of the UI. |
+| `Monthly usage limit reached` | The user has used the monthly credit. Wait for next month (UTC), raise `MONTHLY_USER_LIMIT_USD`, or enter your own OpenAI key in the sidebar. |
+| `OpenAI rate limit or quota exceeded` | The key has hit a rate limit or has no remaining credit. Wait, check billing, switch `OPENAI_MODEL`, or use a different key. |
+| `OpenAI failed: ...` | Check the key, the model name, and network access. The error is shown in the UI. |
 | E2B authentication or quota error | Verify `E2B_API_KEY` and check the usage dashboard at e2b.dev. |
 | `npm run build` fails with a timeout | The React build step has a 600-second limit. Reduce the project size or dependencies. |
 | No traces appear in LangSmith | Set `LANGCHAIN_TRACING_V2=true` and provide a valid `LANGCHAIN_API_KEY`. |

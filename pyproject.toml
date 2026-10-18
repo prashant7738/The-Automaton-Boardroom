@@ -49,7 +49,8 @@ dependencies = [
     "tenacity>=8.2.0",             # Retry logic with exponential backoff
     # Type Hints & Extensions
     "typing-extensions>=4.8.0",    # Extended type hints for older Python
-    "google-genai>=2.0.0",          # Interactions API client
+    # LLM Provider
+    "openai>=1.60.0",              # OpenAI Responses API client
 ]
 
 [project.optional-dependencies]
